@@ -1,6 +1,9 @@
 pub mod auth;
+pub mod devices;
 pub mod health;
+pub mod persons;
 pub mod projects;
+pub mod tools;
 
 use crate::auth::JwtCodec;
 use crate::config::Config;
@@ -18,6 +21,19 @@ pub struct AppState {
     pub db: PgPool,
     pub config: Arc<Config>,
     pub jwt: Arc<JwtCodec>,
+}
+
+/// Returns true if the sqlx error is a Postgres `unique_violation` (23505).
+///
+/// Shared by handlers that translate INSERT / UPDATE conflicts into 409
+/// `CONFLICT` (e.g. duplicate `projects.code`, `persons.employee_no`,
+/// `tools.sn`, `devices.sn`).
+pub(crate) fn is_unique_violation(e: &sqlx::Error) -> bool {
+    if let sqlx::Error::Database(db_err) = e {
+        db_err.code().as_deref() == Some("23505")
+    } else {
+        false
+    }
 }
 
 /// Build the top-level axum router.
@@ -62,6 +78,51 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/api/projects/:project_id/members/:user_id",
             patch(projects::patch_member).delete(projects::remove_member),
+        )
+        // Master data: persons.
+        .route(
+            "/api/persons",
+            get(persons::list).post(persons::create),
+        )
+        .route(
+            "/api/persons/:id",
+            get(persons::get_one)
+                .patch(persons::patch)
+                .delete(persons::soft_delete),
+        )
+        .route(
+            "/api/persons/:id/restore",
+            post(persons::restore),
+        )
+        // Master data: tools.
+        .route(
+            "/api/tools",
+            get(tools::list).post(tools::create),
+        )
+        .route(
+            "/api/tools/:id",
+            get(tools::get_one)
+                .patch(tools::patch)
+                .delete(tools::soft_delete),
+        )
+        .route(
+            "/api/tools/:id/restore",
+            post(tools::restore),
+        )
+        // Master data: devices.
+        .route(
+            "/api/devices",
+            get(devices::list).post(devices::create),
+        )
+        .route(
+            "/api/devices/:id",
+            get(devices::get_one)
+                .patch(devices::patch)
+                .delete(devices::soft_delete),
+        )
+        .route(
+            "/api/devices/:id/restore",
+            post(devices::restore),
         )
         .layer(TraceLayer::new_for_http())
         .with_state(state)
