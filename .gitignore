@@ -50,3 +50,9 @@ Thumbs.db
 
 # Local stream/scratch artifacts
 .tmp_a5_*
+
+# Release artifacts (built by packaging/scripts/build-release.sh)
+/dist/
+
+# Bundled PostgreSQL tree (populated by packaging/scripts/fetch-bundled-pg.sh)
+/bundled-pg/

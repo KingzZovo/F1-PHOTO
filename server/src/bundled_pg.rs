@@ -65,7 +65,7 @@ impl BundledPg {
             std::fs::create_dir_all(&data_dir).ok();
             let pwfile = data_dir.with_extension("pwfile");
             std::fs::write(&pwfile, &password).context("write initdb pwfile")?;
-            let status = Command::new(&initdb)
+            let output = Command::new(&initdb)
                 .arg("-D")
                 .arg(&data_dir)
                 .arg("-U")
@@ -76,12 +76,14 @@ impl BundledPg {
                 .arg(format!("--pwfile={}", pwfile.display()))
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
-                .status()
+                .output()
                 .context("spawn initdb")?;
-            let _ = std::fs::remove_file(&pwfile);
+            let status = output.status;
             if !status.success() {
-                bail!("initdb failed (exit={status})");
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                bail!("initdb failed (exit={status}):\n{}", stderr.trim());
             }
+            let _ = std::fs::remove_file(&pwfile);
         }
 
         // Make sure pgvector + listen-on-loopback are configured.
@@ -102,6 +104,11 @@ impl BundledPg {
             .context("spawn postgres")?;
 
         wait_for_listen(port, Duration::from_secs(20))?;
+
+        // initdb only creates the default `postgres` cluster DB; explicitly
+        // create the application database (idempotent) before any sqlx
+        // migrations try to connect.
+        ensure_database(&bin_dir, port, &password, DEFAULT_USER, DEFAULT_DB)?;
 
         // If the caller didn't explicitly set F1P_DATABASE_URL, point it at
         // the bundled instance so db::connect picks it up unchanged.
@@ -173,8 +180,27 @@ fn which(bin_dir: &Path, name: &str) -> Result<PathBuf> {
 
 fn write_postgresql_conf(data_dir: &Path, port: u16) -> Result<()> {
     let path = data_dir.join("postgresql.conf");
+    // Keep the unix socket inside the data dir; the default `/var/run/postgresql`
+    // requires root and breaks when the bundled PG runs as the f1photo system
+    // user.
+    let socket_dir = data_dir.display();
     let content = format!(
-        "# managed by f1-photo bundled_pg.rs\nlisten_addresses = '127.0.0.1'\nport = {port}\nshared_buffers = '256MB'\nwork_mem = '32MB'\nmax_connections = 100\nlogging_collector = on\nlog_directory = 'log'\nlog_filename = 'postgresql-%Y-%m-%d.log'\nlog_min_duration_statement = 500\nshared_preload_libraries = 'vector'\n"
+        "# managed by f1-photo bundled_pg.rs\n\
+listen_addresses = '127.0.0.1'\n\
+port = {port}\n\
+unix_socket_directories = '{socket_dir}'\n\
+shared_buffers = '256MB'\n\
+work_mem = '32MB'\n\
+max_connections = 100\n\
+logging_collector = on\n\
+log_directory = 'log'\n\
+log_filename = 'postgresql-%Y-%m-%d.log'\n\
+log_min_duration_statement = 500\n\
+# pgvector NOTE: do NOT preload via shared_preload_libraries.\n\
+# Migrations run `CREATE EXTENSION IF NOT EXISTS vector` and HNSW indexes\n\
+# build fine without preloading. Preloading only matters for HNSW background\n\
+# concurrent builds, and on bundled portable PG it triggers a SIGSEGV when\n\
+# the .so isn't loaded from the same compile-time path as the binary.\n"
     );
     std::fs::write(&path, content).context("write postgresql.conf")?;
     Ok(())
@@ -202,4 +228,54 @@ fn wait_for_listen(port: u16, timeout: Duration) -> Result<()> {
         std::thread::sleep(Duration::from_millis(250));
     }
     bail!("timed out waiting for bundled postgres on :{port}");
+}
+
+/// Idempotently `CREATE DATABASE` for the application using the bundled `psql`.
+/// Connects to the default `postgres` cluster DB. Safe to call on every boot.
+fn ensure_database(
+    bin_dir: &Path,
+    port: u16,
+    password: &str,
+    user: &str,
+    db: &str,
+) -> Result<()> {
+    let psql = which(bin_dir, "psql")?;
+    // Check if DB exists.
+    let check = Command::new(&psql)
+        .arg("-h").arg("127.0.0.1")
+        .arg("-p").arg(port.to_string())
+        .arg("-U").arg(user)
+        .arg("-d").arg("postgres")
+        .arg("-tAc")
+        .arg(format!("SELECT 1 FROM pg_database WHERE datname='{db}'"))
+        .env("PGPASSWORD", password)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .context("spawn psql (check db)")?;
+    if !check.status.success() {
+        let stderr = String::from_utf8_lossy(&check.stderr);
+        bail!("psql failed checking for {db}: {}", stderr.trim());
+    }
+    let exists = String::from_utf8_lossy(&check.stdout).trim() == "1";
+    if exists {
+        return Ok(());
+    }
+    tracing::info!(%db, "creating bundled application database");
+    let create = Command::new(&psql)
+        .arg("-h").arg("127.0.0.1")
+        .arg("-p").arg(port.to_string())
+        .arg("-U").arg(user)
+        .arg("-d").arg("postgres")
+        .arg("-c").arg(format!("CREATE DATABASE \"{db}\""))
+        .env("PGPASSWORD", password)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .context("spawn psql (create db)")?;
+    if !create.status.success() {
+        let stderr = String::from_utf8_lossy(&create.stderr);
+        bail!("psql failed creating {db}: {}", stderr.trim());
+    }
+    Ok(())
 }

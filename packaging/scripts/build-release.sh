@@ -18,7 +18,21 @@ ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$ROOT"
 
 VERSION=$(grep '^version' server/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
-TARGET=${TARGET:-x86_64-unknown-linux-gnu}
+# Auto-derive Rust target triple + tarball arch suffix from host unless TARGET
+# is explicitly set (CI passes TARGET=x86_64-unknown-linux-gnu when building
+# on x86_64 runners; aarch64 hosts produce aarch64 tarballs).
+HOST_ARCH=$(uname -m)
+case "$HOST_ARCH" in
+    x86_64)  DEFAULT_TARGET=x86_64-unknown-linux-gnu;  ARCH_SUFFIX=x86_64 ;;
+    aarch64|arm64) DEFAULT_TARGET=aarch64-unknown-linux-gnu; ARCH_SUFFIX=aarch64 ;;
+    *) echo "unsupported host arch: $HOST_ARCH" >&2; exit 1 ;;
+esac
+TARGET=${TARGET:-$DEFAULT_TARGET}
+# Derive ARCH_SUFFIX from TARGET if explicitly overridden.
+case "$TARGET" in
+    x86_64-*)  ARCH_SUFFIX=x86_64 ;;
+    aarch64-*) ARCH_SUFFIX=aarch64 ;;
+esac
 
 export PATH=/root/.cargo/bin:$PATH
 
@@ -50,6 +64,6 @@ cp -R packaging/scripts "$DIST/packaging/"
 if [[ -d docs ]]; then cp -R docs/. "$DIST/docs/"; fi
 
 echo "[4/4] tarballing"
-tar -C "$ROOT/dist" -czf "$ROOT/dist/f1photo-$VERSION-linux-x86_64.tar.gz" \
+tar -C "$ROOT/dist" -czf "$ROOT/dist/f1photo-$VERSION-linux-$ARCH_SUFFIX.tar.gz" \
     "$(basename "$DIST")"
-echo "OK -> dist/f1photo-$VERSION-linux-x86_64.tar.gz"
+echo "OK -> dist/f1photo-$VERSION-linux-$ARCH_SUFFIX.tar.gz"

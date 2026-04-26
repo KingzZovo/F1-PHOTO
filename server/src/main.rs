@@ -17,10 +17,24 @@ use f1_photo_server::{
 async fn main() -> Result<()> {
     logging::init();
     let cli = Cli::parse();
+
+    // If the operator opted into the bundled PG (`F1P_USE_BUNDLED_PG=1`),
+    // start it BEFORE Config::from_env() so that F1P_DATABASE_URL is set
+    // by the time Config validates env. The handle is held for the lifetime
+    // of `main` so the watchdog stays attached and shutdown still runs.
+    let bundled = BundledPg::maybe_start()?;
+    if let Some(ref pg) = bundled {
+        tracing::info!(
+            port = pg.port,
+            data_dir = ?pg.data_dir,
+            "bundled postgres ready"
+        );
+    }
+
     let cfg = Config::from_env()?;
 
     match cli.command.unwrap_or(Command::Serve) {
-        Command::Serve => serve(cfg).await,
+        Command::Serve => serve(cfg, bundled).await,
         Command::BootstrapAdmin {
             username,
             password,
@@ -42,22 +56,7 @@ async fn main() -> Result<()> {
     }
 }
 
-async fn serve(cfg: Config) -> Result<()> {
-    // If the operator opted into the bundled PG (`F1P_USE_BUNDLED_PG=1`),
-    // start it now so the rest of the boot sequence can rely on the
-    // standard `F1P_DATABASE_URL` plumbing. The launched child is held in
-    // `_pg` for the duration of the process and torn down on shutdown.
-    let bundled = BundledPg::maybe_start()?;
-    if let Some(ref pg) = bundled {
-        tracing::info!(port = pg.port, data_dir = ?pg.data_dir, "bundled postgres ready");
-    }
-
-    // Re-derive Config so it picks up F1P_DATABASE_URL written by bundled PG.
-    let cfg = if bundled.is_some() {
-        Config::from_env()?
-    } else {
-        cfg
-    };
+async fn serve(cfg: Config, bundled: Option<BundledPg>) -> Result<()> {
     let bind_addr = cfg.bind_addr.clone();
     tracing::info!(
         version = env!("CARGO_PKG_VERSION"),

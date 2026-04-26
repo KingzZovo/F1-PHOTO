@@ -1,0 +1,119 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  server:
+    name: Server (Rust + PG)
+    runs-on: ubuntu-22.04
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: f1photo
+          POSTGRES_PASSWORD: f1photo_dev
+          POSTGRES_DB: f1photo_dev
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U f1photo -d f1photo_dev"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      F1P_DATABASE_URL: postgres://f1photo:f1photo_dev@127.0.0.1:5433/f1photo_dev
+      F1P_BIND: 127.0.0.1:18080
+      F1P_JWT_SECRET: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      RUST_BACKTRACE: 1
+      CARGO_TERM_COLOR: always
+      SQLX_OFFLINE: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust 1.83
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.83"
+          components: clippy, rustfmt
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+      - name: Wait for Postgres
+        run: |
+          for i in $(seq 1 30); do
+            pg_isready -h 127.0.0.1 -p 5433 -U f1photo && break
+            sleep 1
+          done
+      - name: cargo fmt --check
+        working-directory: server
+        run: cargo fmt --check
+      - name: cargo clippy
+        working-directory: server
+        run: cargo clippy --all-targets --no-deps -- -D warnings -A dead_code
+      - name: cargo build
+        working-directory: server
+        run: cargo build --bin f1photo
+      - name: cargo test
+        working-directory: server
+        run: cargo test -- --test-threads=1
+
+  web:
+    name: Web (Vue 3 + Vite)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install
+        working-directory: web
+        run: npm install --no-audit --no-fund
+      - name: Type-check
+        working-directory: web
+        run: npx vue-tsc --noEmit
+      - name: Build
+        working-directory: web
+        run: npx vite build
+      - name: Upload web/dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+          retention-days: 7
+
+  android:
+    name: Android (Compose)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-home-cache-cleanup: true
+      - name: assembleDebug
+        working-directory: android
+        run: |
+          chmod +x ./gradlew 2>/dev/null || true
+          if [[ -f ./gradlew ]]; then
+            ./gradlew assembleDebug --no-daemon
+          else
+            # gradle wrapper not committed yet; fall back to system gradle.
+            gradle assembleDebug --no-daemon
+          fi
+      - name: Upload APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: f1photo-android-debug
+          path: android/app/build/outputs/apk/debug/*.apk
+          retention-days: 7
+          if-no-files-found: warn

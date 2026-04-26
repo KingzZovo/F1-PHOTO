@@ -1,0 +1,95 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build (e.g. v0.1.0). Defaults to current ref."
+        required: false
+
+jobs:
+  release-linux:
+    name: Release tarball (linux-x86_64)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install Rust 1.83
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.83"
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            postgresql-16 postgresql-server-dev-16 \
+            patchelf rsync git build-essential
+      - name: Fetch portable PG + pgvector
+        run: ./packaging/scripts/fetch-bundled-pg.sh --from-system
+      - name: Build release tarball
+        run: ./packaging/scripts/build-release.sh
+      - name: Smoke-test tarball layout
+        run: |
+          ls -lh dist/
+          tar -tzf dist/f1photo-*-linux-x86_64.tar.gz | head -40
+      - name: Upload release artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: f1photo-linux-x86_64
+          path: dist/f1photo-*-linux-x86_64.tar.gz
+          retention-days: 30
+      - name: Attach to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/f1photo-*-linux-x86_64.tar.gz
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
+
+  release-windows:
+    name: Release zip (windows-x86_64)
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install Rust 1.83
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.83"
+          targets: x86_64-pc-windows-msvc
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+      - name: Build release zip
+        shell: pwsh
+        run: ./packaging/scripts/build-release.ps1
+      - name: Upload release artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: f1photo-windows-x86_64
+          path: dist/f1photo-*-windows-x86_64.zip
+          retention-days: 30
+      - name: Attach to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/f1photo-*-windows-x86_64.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
