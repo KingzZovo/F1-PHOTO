@@ -331,12 +331,15 @@ echo "▶ auth: logout"
 assert_http 204 POST "$BASE/api/auth/logout" -H "$AUTH_H"
 
 echo "▶ server log: ERROR / panic check"
-# Allow the documented stub-fallback WARN. Anything else is a regression.
+# Step C of the turn-23 ONNX rollout: all four production model slots are
+# wired with real ONNX weights, so the real pipeline must run cleanly. We no
+# longer whitelist the stub-fallback WARN here; if it appears the smoke
+# fails so silent inference regressions surface immediately.
 if grep -nE ' ERROR | panicked at ' "$LOG" >&2; then
     echo "✗ server log contains ERROR/panic lines" >&2
     exit 1
 fi
-UNEXPECTED_WARN=$(grep -E ' WARN ' "$LOG" | grep -vE 'real ONNX pipeline unavailable; falling back to unmatched' || true)
+UNEXPECTED_WARN=$(grep -E ' WARN ' "$LOG" || true)
 if [[ -n "$UNEXPECTED_WARN" ]]; then
     echo "✗ server log contains unexpected WARN lines:" >&2
     printf '%s\n' "$UNEXPECTED_WARN" >&2

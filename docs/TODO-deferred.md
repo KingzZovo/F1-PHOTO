@@ -66,23 +66,32 @@ stub Identity graph (not on the critical recognition path).
      `recognition_items.total >= 1` continues to hold.
   4. Per-photo outcome aggregates the best bucket across all detections
      (face + tool): Matched > Learning > Unmatched.
-- `F1P_INFERENCE_STUB_FALLBACK` still defaults **on** in the smoke env
-  during the gradual rollout. **Step C** flips it off in production so
-  real-pipeline `Err`s surface as queue retries (and eventually photo
-  `failed` after `MAX_ATTEMPTS=5`).
+- `F1P_INFERENCE_STUB_FALLBACK` now defaults **off** in the worker
+  (`stub_fallback_enabled()` returns `false` when the env var is unset).
+  Real-pipeline `Err`s surface as queue retries and eventually photo
+  `failed` after `MAX_ATTEMPTS=5`. Smoke and staged-rollout environments
+  can opt back in by exporting `F1P_INFERENCE_STUB_FALLBACK=1`; the
+  in-tree `packaging/scripts/smoke-e2e.sh` keeps that opt-in for now as
+  a defence-in-depth guard during the rollout window.
 - `packaging/scripts/smoke-e2e.sh` now asserts
   `recognition_items.total >= 1` for the uploaded happy-path photo. The
   fallback path does NOT write `recognition_items` rows, so this
   assertion catches the case where the real pipeline silently errors
   out and falls back to `unmatched` — i.e. it implements the
   "succeeded ≠ healthy" rule for this code path.
-- The `Outcome::FallbackUnmatched` variant and the documented WARN line
-  it logs ("real ONNX pipeline unavailable; falling back to unmatched")
-  are still kept around as a defensive landing pad while
-  `F1P_INFERENCE_STUB_FALLBACK=1` remains the smoke default. Step C
-  removes both the WARN line from the smoke whitelist and the variant
-  itself (or marks it `#[deprecated]`) once production flips the env
-  default to 0.
+- `packaging/scripts/smoke-e2e.sh` no longer whitelists the
+  `"real ONNX pipeline unavailable; falling back to unmatched"` WARN.
+  Any WARN line in the server log now fails the smoke, so a silent
+  inference regression that quietly falls back to `unmatched` will
+  surface immediately.
+- The `Outcome::FallbackUnmatched` variant has been deleted; both code
+  paths that previously used it (the `state.models.ready() == false`
+  bootstrap branch and the opt-in stub-fallback branch) now produce
+  `Outcome::Unmatched` directly, which still maps to `photo_status =
+  'unmatched'` via `Outcome::as_status`. The WARN log line itself is
+  preserved (gated behind `F1P_INFERENCE_STUB_FALLBACK=1`) so an
+  operator who explicitly opts back in still sees the regression
+  signal.
 
 ### Important caveat: yolov8n is COCO-trained, not tool/device-specific
 
@@ -102,22 +111,20 @@ matching.
 
 ### What "done" looks like (remaining)
 
-1. **Step C** (next): tighten `packaging/scripts/smoke-e2e.sh`'s WARN
-   whitelist to reject `"real ONNX pipeline unavailable; falling back
-   to unmatched"`; flip the production default to
-   `F1P_INFERENCE_STUB_FALLBACK=0`; mark `Outcome::FallbackUnmatched`
-   `#[deprecated]` (or delete it).
-2. Fine-tune (or train from scratch) a domain-specific tool/device
+1. Fine-tune (or train from scratch) a domain-specific tool/device
    detector to replace the COCO YOLOv8n in `models/object_detect.onnx`.
    Until then, the recall layer is doing the heavy lifting and accuracy
    is bottlenecked on the gallery quality, not the detector.
-3. Add an integration test that uses the bundled-pg + a checked-in
+2. Add an integration test that uses the bundled-pg + a checked-in
    small-but-real face crop to verify at least one matched-bucket
    `recognition_items` row is produced (the smoke assertion currently
    covers the *unmatched* bucket on a freshly-seeded gallery).
-4. Optional: ship a real MobileNetV3 angle classifier into
+3. Optional: ship a real MobileNetV3 angle classifier into
    `models/angle_classify.onnx` if the recognition pipeline ever needs
    pose-aware gating; not required for matching as it stands.
+4. Run a real-dataset smoke (curated face + tool crops + populated
+   gallery) to establish baseline precision/recall numbers before
+   declaring the rollout fully cut over.
 
 ## 2. Android client
 

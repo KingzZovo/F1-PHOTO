@@ -75,8 +75,6 @@ struct Job {
 /// and to know whether to drop the queue row (success) or retry (error).
 #[derive(Debug, Clone, Copy)]
 enum Outcome {
-    /// No live inference. Photo flagged `unmatched`. Used in dev / first-run.
-    FallbackUnmatched,
     /// At least one detection landed in the `matched` bucket.
     Matched,
     /// At least one detection in `learning`, none `matched`.
@@ -89,7 +87,7 @@ enum Outcome {
 impl Outcome {
     fn as_status(self) -> &'static str {
         match self {
-            Outcome::FallbackUnmatched | Outcome::Unmatched => "unmatched",
+            Outcome::Unmatched => "unmatched",
             Outcome::Matched => "matched",
             Outcome::Learning => "learning",
         }
@@ -212,14 +210,17 @@ async fn claim_one(pool: &PgPool) -> Result<Option<Job>> {
 ///
 /// Branches:
 /// 1. `state.models.ready() == false` (no `libonnxruntime.so` or no `.onnx`
-///    files) → fallback: photo goes straight to `unmatched` and the queue
-///    row is dropped. This preserves the turn 7 behaviour the existing test
-///    suite expects.
+///    files) → photo goes straight to `unmatched` and the queue row is
+///    dropped. This preserves the turn 7 behaviour the existing test suite
+///    expects and also keeps environments without the ONNX runtime usable.
 /// 2. `state.models.ready() == true` → [`run_real_pipeline`]. Errors are
 ///    converted into a queue retry by [`record_failure`] until
-///    [`MAX_ATTEMPTS`] is hit (or, when `F1P_INFERENCE_STUB_FALLBACK=1`,
-///    silently downgraded to `Outcome::FallbackUnmatched` so the queue
-///    keeps draining during the gradual roll-out).
+///    [`MAX_ATTEMPTS`] is hit. When `F1P_INFERENCE_STUB_FALLBACK=1` is set
+///    explicitly (e.g. for smoke or staged rollout), pipeline errors are
+///    instead silently downgraded to `Outcome::Unmatched` so the queue
+///    keeps draining. As of Step C of the turn-23 ONNX rollout this env
+///    var defaults to OFF in production: pipeline errors surface as
+///    failures unless an operator opts back in.
 async fn process_job(state: &AppState, job: &Job) -> Result<()> {
     let pool = &state.db;
 
@@ -243,12 +244,12 @@ async fn process_job(state: &AppState, job: &Job) -> Result<()> {
                     error = %format!("{e:#}"),
                     "real ONNX pipeline unavailable; falling back to unmatched (F1P_INFERENCE_STUB_FALLBACK=1)"
                 );
-                Outcome::FallbackUnmatched
+                Outcome::Unmatched
             }
             Err(e) => return Err(e),
         }
     } else {
-        Outcome::FallbackUnmatched
+        Outcome::Unmatched
     };
 
     apply_outcome(pool, job.photo_id, outcome).await?;
@@ -269,17 +270,19 @@ async fn process_job(state: &AppState, job: &Job) -> Result<()> {
 }
 
 /// Returns true when the worker should treat a real-pipeline `Err` as
-/// `Outcome::FallbackUnmatched` instead of bubbling it up to the queue
-/// retry path. Defaults to ON until production ONNX weights are wired in,
-/// at which point operators flip `F1P_INFERENCE_STUB_FALLBACK=0` to make
-/// pipeline errors visible as failures again.
+/// `Outcome::Unmatched` instead of bubbling it up to the queue retry path.
+/// As of Step C of the turn-23 ONNX rollout (all four production model
+/// slots wired with real weights) this defaults to **OFF**: pipeline
+/// errors surface as failures and are retried up to `MAX_ATTEMPTS`. Smoke
+/// and staged-rollout environments can opt back in by exporting
+/// `F1P_INFERENCE_STUB_FALLBACK=1`.
 fn stub_fallback_enabled() -> bool {
     match std::env::var("F1P_INFERENCE_STUB_FALLBACK") {
         Ok(v) => {
             let v = v.trim().to_ascii_lowercase();
-            !matches!(v.as_str(), "0" | "false" | "no" | "off" | "")
+            matches!(v.as_str(), "1" | "true" | "yes" | "on")
         }
-        Err(_) => true,
+        Err(_) => false,
     }
 }
 
