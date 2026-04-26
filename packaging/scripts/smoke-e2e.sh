@@ -127,6 +127,7 @@ F1P_BIND=127.0.0.1:$APP_PORT
 F1P_DATA_DIR=$UPLOADS
 F1P_MODELS_DIR=$MODELS_DIR
 ORT_DYLIB_PATH=$ORT_DYLIB
+F1P_INFERENCE_STUB_FALLBACK=1
 RUST_LOG=info,sqlx=warn
 EOF
 }
@@ -245,6 +246,38 @@ assert_http 200 GET "$BASE/api/projects/$PROJECT_ID/photos/$PHOTO_ID" -H "$AUTH_
 echo "▶ recognition: items list"
 assert_http 200 GET "$BASE/api/projects/$PROJECT_ID/recognition_items" -H "$AUTH_H"
 
+echo "▶ recognition: worker drains queue + photo leaves processing"
+# Worker should pick up the just-uploaded photo, hit the stub-fallback path
+# (F1P_INFERENCE_STUB_FALLBACK=1) and transition the photo out of
+# 'processing' within a few seconds. If it doesn't, that's a regression.
+drain_ok=0
+for i in $(seq 1 30); do
+    curl -sS -o "$WORK_DIR/last.body" "$BASE/api/admin/queue/stats" -H "$AUTH_H"
+    QP="$(jq_get "['queue_pending']")"
+    QL="$(jq_get "['queue_locked']")"
+    PP="$(jq_get "['photo_processing']")"
+    if [[ "$QP" == "0" && "$QL" == "0" && "$PP" == "0" ]]; then
+        drain_ok=1
+        break
+    fi
+    sleep 1
+done
+if [[ $drain_ok -ne 1 ]]; then
+    echo "✗ recognition queue did not drain in 30s (queue_pending=$QP queue_locked=$QL photo_processing=$PP)" >&2
+    echo "  last queue stats:" >&2; cat "$WORK_DIR/last.body" >&2 ; echo >&2
+    echo "  last 60 lines of server log:" >&2; tail -60 "$LOG" >&2 ; echo >&2
+    exit 1
+fi
+echo "✓ queue drained (queue_pending=0 queue_locked=0 photo_processing=0)"
+
+# Re-fetch the photo and verify it has a terminal status now.
+assert_http 200 GET "$BASE/api/projects/$PROJECT_ID/photos/$PHOTO_ID" -H "$AUTH_H"
+PSTATUS="$(jq_get "['status']")"
+case "$PSTATUS" in
+    matched|learning|unmatched|failed) echo "✓ photo terminal status: $PSTATUS" ;;
+    *) echo "✗ photo still in non-terminal status: $PSTATUS" >&2; exit 1 ;;
+esac
+
 echo "▶ master data: persons"
 assert_http 201 POST "$BASE/api/persons" -H "$AUTH_H" -H 'content-type: application/json' \
     -d '{"employee_no":"E-001","name":"Smoke Person"}'
@@ -274,6 +307,20 @@ assert_http 200 GET "$BASE/api/settings" -H "$AUTH_H"
 
 echo "▶ auth: logout"
 assert_http 204 POST "$BASE/api/auth/logout" -H "$AUTH_H"
+
+echo "▶ server log: ERROR / panic check"
+# Allow the documented stub-fallback WARN. Anything else is a regression.
+if grep -nE ' ERROR | panicked at ' "$LOG" >&2; then
+    echo "✗ server log contains ERROR/panic lines" >&2
+    exit 1
+fi
+UNEXPECTED_WARN=$(grep -E ' WARN ' "$LOG" | grep -vE 'real ONNX pipeline unavailable; falling back to unmatched' || true)
+if [[ -n "$UNEXPECTED_WARN" ]]; then
+    echo "✗ server log contains unexpected WARN lines:" >&2
+    printf '%s\n' "$UNEXPECTED_WARN" >&2
+    exit 1
+fi
+echo "✓ no unexpected ERROR/WARN/panic in server log"
 
 echo ""
 echo "✓✓✓ SMOKE PASSED"
