@@ -267,3 +267,49 @@ export interface PhotoUploadResponse {
   owner_id?: string | null
   angle: string
 }
+
+// ---------------------------------------------------------------------------
+// Recognition results
+// ---------------------------------------------------------------------------
+
+export type RecognitionStatus =
+  | "matched"
+  | "learning"
+  | "unmatched"
+  | "manual_corrected"
+
+/** Owner types accepted as a manual correction target. */
+export type CorrectionOwnerType = "person" | "tool" | "device"
+
+export interface RecognitionItem {
+  id: string
+  project_id: string
+  photo_id: string
+  detection_id?: number | null
+  status: RecognitionStatus | string
+  suggested_owner_type?: OwnerType | string | null
+  suggested_owner_id?: string | null
+  suggested_score?: number | null
+  corrected_owner_type?: OwnerType | string | null
+  corrected_owner_id?: string | null
+  corrected_by?: string | null
+  corrected_at?: string | null
+  effective_owner_type?: OwnerType | string | null
+  effective_owner_id?: string | null
+  created_at: string
+}
+
+export interface RecognitionListQuery {
+  photo_id?: string
+  owner_type?: OwnerType
+  owner_id?: string
+  status?: RecognitionStatus
+  page?: number
+  page_size?: number
+}
+
+export interface RecognitionCorrectInput {
+  /** Provide both fields to set a manual correction; omit both to clear. */
+  owner_type?: CorrectionOwnerType | null
+  owner_id?: string | null
+}
