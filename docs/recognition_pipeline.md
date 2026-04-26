@@ -1,11 +1,11 @@
 # 识别与自学习流水线
 
-> 与 [permissions.md](permissions.md) 配套：所有识别步骤都在「项目作用域」内，不会跨项目串数据。
+> v3：特征值库全局共享，kNN 跨项目匹配。照片可见性仍由项目控制（详见 [permissions.md](permissions.md)）。
 
 ## 1. 总体阶段
 
 ```
-上传 → 预处理 → 检测 → Embedding → 角度 → kNN(项目内) 匹配 → 决策 → 归档 ⮕ SSE 推送
+上传 → 预处理 → 检测 → Embedding → 角度 → 全局 kNN 匹配 → 决策 → 归档 → SSE 推送
 ```
 
 所有阶段走后台 Worker，上传接口不阻塞。
@@ -28,7 +28,7 @@
 
 ### 3.2 工具 / 设备 (target_type=tool|device)
 
-- 模型：`yolov8n_int8.onnx`，按项目级 `recognition_projects` 设置限定类号。
+- 模型：`yolov8n_int8.onnx`，按项目级 `recognition.tool|device.classes` 设置限定类号。
 - score ≥ 0.4、面积 ≥ 96×96 的主体框。
 - 同图多主体按面积降序取前 N。
 
@@ -56,41 +56,49 @@
 
 ### v2 训练后
 
-- 使用 `models/angle_cls.onnx`，项目设置 `angle_classifier=enabled` 后切换。
+- 使用 `models/angle_cls.onnx`，全局 / 项目设置 `recognition.angle.enabled=true` 后切换。
 
 ## 6. 匹配与决策
 
-### 6.1 kNN（强制项目隔离）
+### 6.1 kNN（全局）
 
 ```sql
 SELECT owner_type, owner_id, 1 - (embedding <=> $1) AS score
 FROM identity_embeddings
-WHERE project_id = $2
-  AND owner_type = $3
+WHERE owner_type = $2
 ORDER BY embedding <=> $1
 LIMIT 5;
 ```
 
-- 项目级覆盖优先：`projects.overrides.match_threshold` 覆盖全局默认 `0.62`。
+- **不带 `project_id` 过滤**。同一员工在项目 A 训练过的特征值，项目 B 上传时可直接识别出来。
+- 项目级覆盖仅限「阈值」、「是否启用某一识别」这类参数：`projects.overrides.match.threshold` 覆盖全局默认 `0.62`，但不改变候选集范围。
 - top1.score ≡ 1 - cosine_distance。
-- HNSW 全局，但前置 `project_id + owner_type` 过滤；规模上去后可考虑 partitioned index。
+- HNSW 全局，后接 owner_type 过滤；规模上去后可考虑 partial / partitioned index。
 
 ### 6.2 状态机
 
 | top1 score | 状态 | 动作 |
 |---|---|---|
-| ≥ threshold | matched | 绑定 owner、归档、SSE matched |
-| [low, threshold) | learning | 写一条 incremental embedding（同 project_id）、SSE learning、归档 |
-| < low | unmatched | 写 recognition_items(unmatched)（同 project_id）、SSE unmatched、不归档 |
-| matched 且 ∈ [threshold, 0.95) | matched + augment | 额外写一条 incremental embedding 「补上不匹配的 10%」 |
+| ≥ threshold | matched | 绑定全局 owner、归档、SSE matched |
+| [low, threshold) | learning | 写一条 incremental embedding（全局表，带 `source_project=当前项目`）、SSE learning、归档 |
+| < low | unmatched | 写 `recognition_items(unmatched)`（本项目）、SSE unmatched、不归档 |
+| matched 且 ∈ [threshold, augment_upper) | matched + augment | 额外写一条 incremental embedding「补上不匹配那 10%」 |
+
+增量写入细节：
+
+```sql
+INSERT INTO identity_embeddings (owner_type, owner_id, embedding, source, source_photo, source_project)
+VALUES ($1, $2, $3, 'incremental', $4, $5);
+-- source_project 为近期贡献该向量的项目仅供审计；不影响未来匹配。
+```
 
 ### 6.3 冲突与调和
 
 - 上传时用户已默认填 owner，但识别结果不一致：
   - 保留用户值，`detection.match_status = matched` 不覆盖 `photos.owner_id`。
   - 写一条 `recognition_items(suggested_owner_id, status=manual_corrected)` 给人工复核。
-- 用户还未填、识别后才填：识别先 cache 到 photos，用户保存时拿到结果联动。
-- 跨项目串图：同一物理 hash 在不同项目独立成行，识别只在本项目库内匹配。
+- 用户还未填、识别后才填：识别先 cache 到 `photos.owner_id`，用户保存时联动。
+- 同 hash 在不同项目重复上传：各项目独立成行、独立归档；识别均能命中全局同一 owner。
 
 ## 7. 归档命名规则
 
@@ -100,33 +108,38 @@ data/archive/{project_code}/{wo_code_prefix3}/{YYYYMM}/{wo_code}_{owner_name}_{a
 
 - `project_code`：来自 `projects.code`，避免跨项目同名工单冲突。
 - `wo_code_prefix3`：`wo_code` 前 3 位，避免单目录过大。
-- `owner_name`：去除不安全字符。
+- `owner_name`：取自全局 `persons.name` / `tools.name` / `devices.name`，去除不安全字符。
 - `angle`：front / side / back，非人员为 `view`。
 - `seq`：同 (project_id, wo_code, owner_id, angle) 的序号。
 - 原 `path` 字段保留，归档路径写入 `archive_path`。
+
+> 物理上同一员工的照片会散在多个 `{project_code}/` 目录下，这是预期行为（便于项目维度打包下载）。admin 可用「某员工跨项目照片」接口聊合查看。
 
 ## 8. 人工纠错闭环
 
 ```mermaid
 flowchart LR
-    R[recognition_items 列表\n按项目过滤] --> Open[点开详情]
+    R[recognition_items 列表\n本项目] --> Open[点开详情]
     Open --> Pic[查看红框预绘图]
-    Pic --> Choose[选择正确 owner / 新建\n仅本项目实体]
+    Pic --> Choose[选择正确 owner\n全局主数据任选]
     Choose --> Save[保存]
-    Save --> Update[更新 detections + photos]
-    Save --> Embed[插入 identity_embeddings\n source=manual, project_id 一致]
+    Save --> Update[更新 detections + photos.owner_id]
+    Save --> Embed[插入 identity_embeddings\nsource=manual\nsource_project=当前项目]
     Save --> Audit[audit_log]
-    Save --> Reproc[重跑同 project_id 同 hash 未匹配项?]
+    Save --> Reproc[重跑同 photo 以外近期未匹配项?]
 ```
+
+- 选 owner 时是全局搜索（按姓名 / 员工号 / SN），不限项目。
+- `action=create_and_bind` 仅 admin 可用；普通账号必须先联系管理员在全局主数据里建的人员。
 
 ## 9. 手动「快速建库」入口
 
-- `Persons / Tools / Devices` 页（在选定项目下）提供「快速建档」按钮：上传多张同一实体照 → 后端跑一轮检测/embedding → 创建身份 + 写多条 `identity_embeddings(project_id, source=initial)`。
-- 让新项目能快速冷启动。
+- 主数据页（人员 / 工具 / 设备）admin 提供「快速建档」按钮：上传多张同一实体照 → 后端跑一轮检测/embedding → 创建身份 + 写多条 `identity_embeddings(source=initial, source_project=NULL)`。
+- 这些 initial 向量不属于任何具体项目，在任何项目中都能被匹配。
 
 ## 10. 错误与重试
 
-- Worker 抓取 `recognition_queue` 记录，失败 attempts++，超过 5 次记录错误进人工复查。
+- Worker 抓取 `recognition_queue` 记录，失败 `attempts++`，超过 5 次记录错误进人工复查。
 - 模型加载失败使服务处于 `not ready`，`/readyz` 返 503。
 - 推理单次超时默认 30s，返回 `failed`。
 
@@ -134,4 +147,4 @@ flowchart LR
 
 - 单张（一人 + 一工具）：检测 ~150ms + face emb ~50ms + tool emb ~200ms = **~400ms**。
 - 8 并发 worker、CPU 10C20T 环境，理论吞吐 ~50 photo/s，实际限于磁盘与 DB。
-- 项目隔离对吞吐影响可忽略：HNSW 检索本身比加 `project_id` 过滤代价大得多，过滤只是在候选集上快速 prune。
+- 全局 HNSW + owner_type 过滤足够快；规模 < 10万向量下查询 < 5ms。
