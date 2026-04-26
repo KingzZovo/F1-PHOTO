@@ -7,6 +7,18 @@
 - 前端：Vue 3 + Vite + TypeScript + Naive UI + Tailwind
 - 移动端：Android (Kotlin + Jetpack Compose)
 - 部署：纯离线，单机版，Linux + Windows 一键脚本
+- 多账号：项目级 RBAC（view / upload / delete / manage 四个独立权限位）
+
+## 数据结构
+
+```
+项目 (Project)
+  └── 工单 (Work Order)
+        └── 人员 / 工具 / 设备
+              └── 照片
+```
+
+每个项目都是独立的数据空间，特征值库按项目隔离。
 
 ## 目录
 
@@ -27,6 +39,7 @@ F1-photo/
 |---|---|
 | [docs/plan.md](docs/plan.md) | 完整开发计划与里程碑 |
 | [docs/architecture.md](docs/architecture.md) | 系统架构图与组件说明 |
+| [docs/permissions.md](docs/permissions.md) | 项目隔离 + RBAC 权限设计 |
 | [docs/api.md](docs/api.md) | HTTP API 完整规范 |
 | [docs/data_model.md](docs/data_model.md) | 数据库 schema |
 | [docs/recognition_pipeline.md](docs/recognition_pipeline.md) | 识别 / 自学习流水线细节 |
