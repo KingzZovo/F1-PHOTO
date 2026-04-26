@@ -88,6 +88,40 @@ pub fn encode_vector(v: &[f32]) -> String {
     s
 }
 
+/// L2-normalize an embedding in place. No-op when norm is degenerate (zero
+/// vector / NaN). After this, `||v|| == 1` so cosine similarity reduces to
+/// a plain dot product.
+pub fn l2_normalize(v: &mut [f32]) {
+    let mut sumsq = 0.0f64;
+    for &x in v.iter() {
+        if x.is_finite() {
+            sumsq += (x as f64) * (x as f64);
+        }
+    }
+    let norm = sumsq.sqrt() as f32;
+    if norm > 1e-12 {
+        for x in v.iter_mut() {
+            *x = if x.is_finite() { *x / norm } else { 0.0 };
+        }
+    }
+}
+
+/// Pad / truncate an embedding to the schema's fixed `vector(512)` width.
+///
+/// Production embedders the project will use produce 512-d vectors
+/// (ArcFace MobileFaceNet 512d). DINOv2-small however emits a 384-d CLS
+/// token. Zero-padding the trailing 128 dims keeps cosine similarity
+/// mathematically identical *as long as both compared embeddings share the
+/// same padding pattern* (the trailing zeros contribute neither to the dot
+/// product nor to the magnitude). The single-model gallery (DINOv2 here)
+/// satisfies that invariant.
+pub fn pad_to_512(v: &[f32]) -> Vec<f32> {
+    let mut out = vec![0.0f32; 512];
+    let n = v.len().min(512);
+    out[..n].copy_from_slice(&v[..n]);
+    out
+}
+
 /// Recall the top-1 identity for a face embedding from the `person` gallery.
 /// Returns `None` if there are zero candidates in the project's gallery.
 pub async fn top1_face(pool: &PgPool, embedding: &[f32]) -> Result<Option<Hit>> {
@@ -209,5 +243,65 @@ mod tests {
         assert_eq!(mk(0.50).bucket(t), Bucket::Learning);
         assert_eq!(mk(0.49).bucket(t), Bucket::Unmatched);
         assert_eq!(mk(0.0).bucket(t), Bucket::Unmatched);
+    }
+
+    #[test]
+    fn l2_normalize_unit_norm() {
+        let mut v = vec![3.0f32, 4.0, 0.0];
+        l2_normalize(&mut v);
+        let n: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+        assert!((n - 1.0).abs() < 1e-5, "norm={n}");
+        assert!((v[0] - 0.6).abs() < 1e-5);
+        assert!((v[1] - 0.8).abs() < 1e-5);
+    }
+
+    #[test]
+    fn l2_normalize_zero_vector_no_op() {
+        let mut v = vec![0.0f32; 4];
+        l2_normalize(&mut v);
+        assert!(v.iter().all(|x| *x == 0.0));
+    }
+
+    #[test]
+    fn l2_normalize_sanitises_nonfinite() {
+        let mut v = vec![3.0f32, 4.0, f32::NAN, f32::INFINITY];
+        l2_normalize(&mut v);
+        // NaN/Inf become 0 in the output
+        assert_eq!(v[2], 0.0);
+        assert_eq!(v[3], 0.0);
+        let real_norm: f32 = (v[0] * v[0] + v[1] * v[1]).sqrt();
+        assert!((real_norm - 1.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn pad_to_512_zero_pads_short() {
+        let v: Vec<f32> = (0..384).map(|i| i as f32).collect();
+        let p = pad_to_512(&v);
+        assert_eq!(p.len(), 512);
+        assert_eq!(&p[..384], v.as_slice());
+        assert!(p[384..].iter().all(|x| *x == 0.0));
+    }
+
+    #[test]
+    fn pad_to_512_truncates_long() {
+        let v: Vec<f32> = (0..600).map(|i| i as f32).collect();
+        let p = pad_to_512(&v);
+        assert_eq!(p.len(), 512);
+        assert_eq!(p[511], 511.0);
+    }
+
+    #[test]
+    fn pad_preserves_cosine_for_normalized_vectors() {
+        // Two unit-norm embeddings: cosine = dot product. Padding both with
+        // the same number of trailing zeros must preserve that.
+        let mut a = vec![3.0f32, 4.0];
+        let mut b = vec![1.0f32, 0.0];
+        l2_normalize(&mut a);
+        l2_normalize(&mut b);
+        let raw_cos: f32 = a.iter().zip(&b).map(|(x, y)| x * y).sum();
+        let pa = pad_to_512(&a);
+        let pb = pad_to_512(&b);
+        let pad_cos: f32 = pa.iter().zip(&pb).map(|(x, y)| x * y).sum();
+        assert!((raw_cos - pad_cos).abs() < 1e-6);
     }
 }

@@ -35,7 +35,7 @@ use tokio::time::sleep;
 use uuid::Uuid;
 
 use crate::api::AppState;
-use crate::inference::{preprocess, recall, Thresholds};
+use crate::inference::{preprocess, recall, ModelKind, Thresholds};
 
 /// After this many failed attempts the photo is marked `failed` and the queue
 /// row is removed.
@@ -295,36 +295,171 @@ async fn apply_outcome(pool: &PgPool, photo_id: Uuid, outcome: Outcome) -> Resul
 
 /// Real ONNX inference pipeline.
 ///
-/// This is gated on [`ModelRegistry::ready`] being `true`, which in turn
-/// requires `libonnxruntime.so` to be loadable AND every required model file
-/// (`face_detect.onnx`, `face_embed.onnx`, `object_detect.onnx`,
-/// `generic_embed.onnx`) to exist and to have built a `Session`. Until we
-/// deploy ONNX Runtime + the model files this returns `Err` so the queue
-/// retries with backoff, exactly as it would for a transient model-load
-/// problem in production.
+/// Gated on [`ModelRegistry::ready`] being `true` (libonnxruntime.so loaded
+/// AND every required `.onnx` Session built).
+///
+/// Current scope (turn 22): the **GenericEmbed** slot is wired to a real
+/// DINOv2-small ONNX model. The whole image is run through the embedder,
+/// producing a CLS-token embedding (384 dims) which is L2-normalised and
+/// zero-padded to the schema's `vector(512)` width. A single `detections`
+/// row is written (`target_type='tool'`, bbox = full image, score = 1.0
+/// = synthetic confidence — there is no proper detection step yet),
+/// followed by a pgvector cosine recall against the tool/device gallery,
+/// a `recognition_items` row, and (when the score crosses the augment
+/// threshold) an incremental gallery augment.
+///
+/// The face-detect / face-embed / object-detect slots are NOT yet wired
+/// here — see `docs/TODO-deferred.md` §1. Until they are, faces and
+/// individual tools/devices are NOT separately localised; the per-photo
+/// outcome is whatever the whole-image DINOv2 embedding nearest-neighbours
+/// to in the existing gallery (typically `Unmatched` on a fresh install).
 async fn run_real_pipeline(state: &AppState, job: &Job) -> Result<Outcome> {
+    let pool = &state.db;
+
     // Resolve photo storage path. `photos.path` is stored as a relative path
     // (e.g. `photos/<project_id>/<prefix>/<hash>.jpg`); the data root lives
     // in `Config::data_dir`.
-    let row = sqlx::query("SELECT path FROM photos WHERE id = $1")
+    let photo_row = sqlx::query("SELECT path, project_id FROM photos WHERE id = $1")
         .bind(job.photo_id)
-        .fetch_one(&state.db)
+        .fetch_one(pool)
         .await?;
-    let rel: String = row.get("path");
+    let rel: String = photo_row.get("path");
+    let project_id: Uuid = photo_row.get("project_id");
     let full = std::path::Path::new(&state.config.data_dir).join(&rel);
 
-    // ---- detection (SCRFD) -------------------------------------------------
-    // Currently uncallable: no live `Session` for FaceDetect / FaceEmbed /
-    // ObjectDetect / GenericEmbed in dev. Sketching the call sites makes the
-    // module shape obvious for the next code drop.
-    let _ = full;
-    let _t = Thresholds::DEFAULT;
-    let _v = recall::encode_vector(&[0.0f32; 512]);
-    let _ = preprocess::Norm::Scrfd;
+    // ---- DINOv2 generic embedding on the whole image ----------------------
+    // 224x224 letterbox + ImageNet mean/std, per `preprocess::Norm::ImageNet`.
+    let (nchw, _lb, (src_w, src_h)) =
+        preprocess::decode_letterbox_nchw(&full, 224, preprocess::Norm::ImageNet)?;
 
-    Err(anyhow!(
-        "real ONNX inference pipeline not yet wired: requires libonnxruntime.so + .onnx files"
-    ))
+    let session = state
+        .models
+        .get(ModelKind::GenericEmbed)
+        .ok_or_else(|| anyhow!("GenericEmbed session not loaded"))?;
+
+    // ort 2.0.0-rc.9 internally bundles ndarray 0.16, but this crate's
+    // `preprocess` module uses ndarray 0.15 (`Array4<f32>` is therefore a
+    // *different* type from ort's perspective and not assignable to its
+    // `IntoValueTensor`). Side-step the version skew by feeding ort the
+    // `(shape, Vec<T>)` form, which is one of the supported input shapes
+    // and is independent of the ndarray version.
+    let dims = nchw.shape().to_vec(); // [1, 3, 224, 224]
+    let data: Vec<f32> = nchw.iter().copied().collect(); // row-major NCHW
+    let pixel_values = ort::value::Tensor::from_array((dims, data))?;
+    let outputs = session.run(ort::inputs! { "pixel_values" => pixel_values }?)?;
+
+    // DINOv2-small output: shape (B=1, 257, 384). Token 0 is the CLS embedding.
+    let raw_view = outputs["last_hidden_state"].try_extract_tensor::<f32>()?;
+    let shape = raw_view.shape().to_vec();
+    if shape.len() != 3 || shape[2] == 0 || shape[1] == 0 {
+        return Err(anyhow!(
+            "DINOv2 output has unexpected shape {:?}; expected (B, T, D)",
+            shape
+        ));
+    }
+    let dim = shape[2];
+    let mut emb: Vec<f32> = (0..dim).map(|i| raw_view[[0, 0, i]]).collect();
+    recall::l2_normalize(&mut emb);
+    let emb_512 = recall::pad_to_512(&emb);
+
+    // ---- detection row (synthetic single full-image detection) ------------
+    let bbox = serde_json::json!({
+        "x1": 0,
+        "y1": 0,
+        "x2": src_w,
+        "y2": src_h,
+        "source": "dinov2_whole_image",
+    });
+    let v_pg = recall::encode_vector(&emb_512);
+    let detection_id: i64 = sqlx::query_scalar(
+        "INSERT INTO detections \
+         (project_id, photo_id, target_type, bbox, score, embedding, match_status) \
+         VALUES ($1, $2, 'tool'::detect_target, $3, $4, $5::vector, 'unmatched'::match_status) \
+         RETURNING id",
+    )
+    .bind(project_id)
+    .bind(job.photo_id)
+    .bind(&bbox)
+    .bind(1.0_f32)
+    .bind(&v_pg)
+    .fetch_one(pool)
+    .await?;
+
+    // ---- pgvector cosine recall against the tool/device gallery -----------
+    let hit = recall::top1_object(pool, &emb_512).await?;
+    let thresholds = Thresholds::DEFAULT;
+    let (bucket, suggested_owner_type, suggested_owner_id, suggested_score) = match &hit {
+        Some(h) => {
+            let b = h.bucket(thresholds);
+            (
+                b,
+                Some(h.owner_type.clone()),
+                Some(h.owner_id),
+                Some(h.score),
+            )
+        }
+        None => (recall::Bucket::Unmatched, None, None, None),
+    };
+    let status_str = match bucket {
+        recall::Bucket::Matched => "matched",
+        recall::Bucket::Learning => "learning",
+        recall::Bucket::Unmatched => "unmatched",
+    };
+
+    // Update detection with recall result.
+    sqlx::query(
+        "UPDATE detections SET \
+             match_status = $1::match_status, \
+             matched_owner_type = $2::owner_type, \
+             matched_owner_id = $3, \
+             matched_score = $4 \
+         WHERE id = $5",
+    )
+    .bind(status_str)
+    .bind(suggested_owner_type.as_deref())
+    .bind(suggested_owner_id)
+    .bind(suggested_score)
+    .bind(detection_id)
+    .execute(pool)
+    .await?;
+
+    // Insert the recognition_items row that surfaces this detection in the UI.
+    sqlx::query(
+        "INSERT INTO recognition_items \
+         (project_id, photo_id, detection_id, status, \
+          suggested_owner_type, suggested_owner_id, suggested_score) \
+         VALUES ($1, $2, $3, $4::match_status, $5::owner_type, $6, $7)",
+    )
+    .bind(project_id)
+    .bind(job.photo_id)
+    .bind(detection_id)
+    .bind(status_str)
+    .bind(suggested_owner_type.as_deref())
+    .bind(suggested_owner_id)
+    .bind(suggested_score)
+    .execute(pool)
+    .await?;
+
+    // Augment the gallery on a strong match so it adapts over time.
+    if let (Some(h), recall::Bucket::Matched) = (&hit, bucket) {
+        if h.score >= thresholds.augment_upper {
+            recall::augment(
+                pool,
+                &h.owner_type,
+                h.owner_id,
+                &emb_512,
+                job.photo_id,
+                project_id,
+            )
+            .await?;
+        }
+    }
+
+    Ok(match bucket {
+        recall::Bucket::Matched => Outcome::Matched,
+        recall::Bucket::Learning => Outcome::Learning,
+        recall::Bucket::Unmatched => Outcome::Unmatched,
+    })
 }
 
 async fn record_failure(pool: &PgPool, job: &Job, msg: &str) -> Result<()> {

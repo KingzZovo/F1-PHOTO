@@ -278,6 +278,28 @@ case "$PSTATUS" in
     *) echo "✗ photo still in non-terminal status: $PSTATUS" >&2; exit 1 ;;
 esac
 
+# Assert the worker actually wrote a recognition_items row for this photo.
+# This guards against silent regressions where the real ONNX pipeline errors
+# out and we fall back to `unmatched` without any per-photo detection trail.
+# When F1P_INFERENCE_STUB_FALLBACK=1 (the smoke default) AND the real pipeline
+# fails, the photo is marked `unmatched` BUT no detection / recognition_items
+# row is inserted, so total=0 here → this assertion catches that case.
+echo "▶ recognition: at least one recognition_items row exists for the uploaded photo"
+assert_http 200 GET "$BASE/api/projects/$PROJECT_ID/recognition_items?photo_id=$PHOTO_ID&page_size=5" -H "$AUTH_H"
+RI_TOTAL="$(jq_get "['total']")"
+echo "  recognition_items.total=$RI_TOTAL (status=$PSTATUS)"
+if [[ -z "$RI_TOTAL" || "$RI_TOTAL" -lt 1 ]]; then
+    echo "✗ expected recognition_items.total ≥ 1 for photo $PHOTO_ID, got '$RI_TOTAL'" >&2
+    echo "  this means the worker did NOT execute the real inference pipeline end-to-end." >&2
+    echo "  last 80 lines of server log:" >&2; tail -80 "$LOG" >&2 ; echo >&2
+    exit 1
+fi
+echo "✓ recognition_items row written by worker (real ONNX pipeline executed)"
+
+# Because at least one recognition_items row was produced AND no fallback WARN
+# is allowed below (we tighten the WARN whitelist now that DINOv2 is wired),
+# the smoke proves the real pipeline ran for this photo end-to-end.
+
 echo "▶ master data: persons"
 assert_http 201 POST "$BASE/api/persons" -H "$AUTH_H" -H 'content-type: application/json' \
     -d '{"employee_no":"E-001","name":"Smoke Person"}'
