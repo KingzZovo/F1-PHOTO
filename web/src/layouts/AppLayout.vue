@@ -59,7 +59,10 @@ const dialog = useDialog()
 const menu: MenuOption[] = [
   { label: "概览", key: "home" },
   { label: "项目", key: "projects" },
-  // turn 14+ will append: persons/tools/devices, work orders, recognition
+  { label: "人员", key: "persons" },
+  { label: "工具", key: "tools" },
+  { label: "设备", key: "devices" },
+  // turn 15+ will append: work orders, recognition
 ]
 
 const current = computed(() => {

@@ -27,6 +27,21 @@ const routes: RouteRecordRaw[] = [
         name: "project-detail",
         component: () => import("@/views/ProjectDetailView.vue"),
       },
+      {
+        path: "persons",
+        name: "persons",
+        component: () => import("@/views/PersonsView.vue"),
+      },
+      {
+        path: "tools",
+        name: "tools",
+        component: () => import("@/views/ToolsView.vue"),
+      },
+      {
+        path: "devices",
+        name: "devices",
+        component: () => import("@/views/DevicesView.vue"),
+      },
     ],
   },
   { path: "/:pathMatch(.*)*", redirect: "/" },

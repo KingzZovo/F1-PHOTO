@@ -47,3 +47,6 @@ __pycache__/
 # OS
 .DS_Store
 Thumbs.db
+
+# Local stream/scratch artifacts
+.tmp_a5_*

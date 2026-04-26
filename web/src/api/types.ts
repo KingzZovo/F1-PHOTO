@@ -104,3 +104,95 @@ export interface AppErrorBody {
 }
 
 export type MeResponse = LoginUser
+
+// ---------------------------------------------------------------------------
+// Master data (persons / tools / devices)
+// ---------------------------------------------------------------------------
+
+/// Backend list response shape for master data endpoints:
+/// `{ data, page, page_size, total }` — distinct from the cursor-style `Page<T>`.
+export interface PagedListResponse<T> {
+  data: T[]
+  page: number
+  page_size: number
+  total: number
+}
+
+export interface MasterDataListQuery {
+  q?: string
+  page?: number
+  page_size?: number
+  include_deleted?: boolean
+}
+
+export interface Person {
+  id: string
+  employee_no: string
+  name: string
+  department?: string | null
+  phone?: string | null
+  photo_count: number
+  created_at: string
+  updated_at: string
+  deleted_at?: string | null
+}
+
+export interface PersonInput {
+  employee_no: string
+  name: string
+  department?: string | null
+  phone?: string | null
+}
+
+export interface PersonPatch {
+  employee_no?: string
+  name?: string
+  department?: string | null
+  phone?: string | null
+}
+
+export interface Tool {
+  id: string
+  sn: string
+  name: string
+  category?: string | null
+  photo_count: number
+  created_at: string
+  updated_at: string
+  deleted_at?: string | null
+}
+
+export interface ToolInput {
+  sn: string
+  name: string
+  category?: string | null
+}
+
+export interface ToolPatch {
+  sn?: string
+  name?: string
+  category?: string | null
+}
+
+export interface Device {
+  id: string
+  sn: string
+  name: string
+  model?: string | null
+  photo_count: number
+  created_at: string
+  updated_at: string
+  deleted_at?: string | null
+}
+
+export interface DeviceInput {
+  sn: string
+  name: string
+  model?: string | null
+}
+
+export interface DevicePatch {
+  sn?: string
+  name?: string
+  model?: string | null
+}
