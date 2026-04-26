@@ -7,9 +7,10 @@ use uuid::Uuid;
 use f1_photo_server::{
     api,
     auth::{JwtCodec, jwt::DEFAULT_TTL_SECONDS, password},
+    bundled_pg::BundledPg,
     cli::{Cli, Command, FinetuneAction, ModelsAction},
     config::Config,
-    db, finetune, inference, logging, worker,
+    db, finetune, inference, logging, static_assets, worker,
 };
 
 #[tokio::main]
@@ -42,6 +43,21 @@ async fn main() -> Result<()> {
 }
 
 async fn serve(cfg: Config) -> Result<()> {
+    // If the operator opted into the bundled PG (`F1P_USE_BUNDLED_PG=1`),
+    // start it now so the rest of the boot sequence can rely on the
+    // standard `F1P_DATABASE_URL` plumbing. The launched child is held in
+    // `_pg` for the duration of the process and torn down on shutdown.
+    let bundled = BundledPg::maybe_start()?;
+    if let Some(ref pg) = bundled {
+        tracing::info!(port = pg.port, data_dir = ?pg.data_dir, "bundled postgres ready");
+    }
+
+    // Re-derive Config so it picks up F1P_DATABASE_URL written by bundled PG.
+    let cfg = if bundled.is_some() {
+        Config::from_env()?
+    } else {
+        cfg
+    };
     let bind_addr = cfg.bind_addr.clone();
     tracing::info!(
         version = env!("CARGO_PKG_VERSION"),
@@ -89,11 +105,26 @@ async fn serve(cfg: Config) -> Result<()> {
         models,
     };
     worker::spawn(state.clone());
-    let app = api::router(state);
+
+    // Log embedded SPA stats so operators can confirm the release binary
+    // shipped with the right web bundle.
+    let summary = static_assets::embed_summary();
+    tracing::info!(
+        files = summary.file_count,
+        bytes = summary.total_bytes,
+        has_index = summary.has_index,
+        "embedded SPA bundle"
+    );
+
+    let app = api::router_with_spa(state);
 
     let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
     tracing::info!(bind = %bind_addr, "listening");
-    axum::serve(listener, app).await?;
+    let serve_result = axum::serve(listener, app).await;
+    if let Some(pg) = bundled {
+        pg.shutdown();
+    }
+    serve_result?;
     Ok(())
 }
 

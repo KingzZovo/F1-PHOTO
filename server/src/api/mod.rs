@@ -13,6 +13,7 @@ pub mod work_orders;
 use crate::auth::JwtCodec;
 use crate::config::Config;
 use crate::inference::ModelRegistry;
+use crate::static_assets;
 use axum::{
     Router,
     extract::DefaultBodyLimit,
@@ -203,4 +204,11 @@ pub fn router(state: AppState) -> Router {
         )
         .layer(TraceLayer::new_for_http())
         .with_state(state)
+}
+
+/// Like [`router`] but also attaches the embedded Vue 3 SPA as a fallback
+/// handler. Production binaries should call this; tests call [`router`]
+/// directly so they don't have to ship a `web/dist/` snapshot.
+pub fn router_with_spa(state: AppState) -> Router {
+    static_assets::attach_spa_fallback(router(state))
 }

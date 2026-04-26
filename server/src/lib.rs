@@ -6,6 +6,7 @@
 pub mod api;
 pub mod audit;
 pub mod auth;
+pub mod bundled_pg;
 pub mod cli;
 pub mod config;
 pub mod db;
@@ -13,4 +14,5 @@ pub mod error;
 pub mod finetune;
 pub mod inference;
 pub mod logging;
+pub mod static_assets;
 pub mod worker;

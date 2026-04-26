@@ -58,6 +58,11 @@ moka = { version = "0.12", features = ["future"] }
 # are handled gracefully so the dev server still boots without them.
 ort = { version = "=2.0.0-rc.9", default-features = false, features = ["load-dynamic", "ndarray"] }
 ort-sys = "=2.0.0-rc.9"
+
+# Embed the Vue 3 SPA build output (`web/dist/`) into the release binary so
+# the production server is a single executable that serves both the API and
+# the static frontend (M4 turn 18).
+include_dir = "0.7"
 ndarray = "0.15"
 
 # Image decode + crop + resize for inference preprocessing (M2 turn 10).

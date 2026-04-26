@@ -1,0 +1,28 @@
+[Unit]
+Description=F1-Photo work-order photo archive server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=f1photo
+Group=f1photo
+WorkingDirectory=/opt/f1photo
+EnvironmentFile=-/etc/f1photo/env
+ExecStart=/opt/f1photo/f1photo serve
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:/var/log/f1photo/server.log
+StandardError=append:/var/log/f1photo/server.log
+LimitNOFILE=65536
+UMask=0027
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/f1photo /var/log/f1photo
+
+[Install]
+WantedBy=multi-user.target
