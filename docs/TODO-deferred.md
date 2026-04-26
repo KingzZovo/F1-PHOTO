@@ -69,10 +69,15 @@ stub Identity graph (not on the critical recognition path).
 - `F1P_INFERENCE_STUB_FALLBACK` now defaults **off** in the worker
   (`stub_fallback_enabled()` returns `false` when the env var is unset).
   Real-pipeline `Err`s surface as queue retries and eventually photo
-  `failed` after `MAX_ATTEMPTS=5`. Smoke and staged-rollout environments
-  can opt back in by exporting `F1P_INFERENCE_STUB_FALLBACK=1`; the
-  in-tree `packaging/scripts/smoke-e2e.sh` keeps that opt-in for now as
-  a defence-in-depth guard during the rollout window.
+  `failed` after `MAX_ATTEMPTS=5`. As of milestone #1 (commit 1827b56)
+  `packaging/scripts/smoke-e2e.sh` no longer exports the env either, so
+  smoke runs against the same default-OFF posture that production
+  deployments will see; `grep -r F1P_INFERENCE_STUB_FALLBACK` over the
+  repo finds only the worker code that reads it and the doc references
+  that explain it — no in-tree manifest sets it. Operators may still
+  opt back in at runtime by exporting `F1P_INFERENCE_STUB_FALLBACK=1`
+  if a rollout-window mishap forces a manual recovery; the WARN line
+  and `Outcome::Unmatched` mapping are still in place for that path.
 - `packaging/scripts/smoke-e2e.sh` now asserts
   `recognition_items.total >= 1` for the uploaded happy-path photo. The
   fallback path does NOT write `recognition_items` rows, so this

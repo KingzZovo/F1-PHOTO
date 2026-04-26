@@ -246,9 +246,9 @@ echo "▶ recognition: items list"
 assert_http 200 GET "$BASE/api/projects/$PROJECT_ID/recognition_items" -H "$AUTH_H"
 
 echo "▶ recognition: worker drains queue + photo leaves processing"
-# Worker should pick up the just-uploaded photo, hit the stub-fallback path
-# (F1P_INFERENCE_STUB_FALLBACK=1) and transition the photo out of
-# 'processing' within a few seconds. If it doesn't, that's a regression.
+# Worker should pick up the just-uploaded photo, run the real ONNX pipeline
+# end-to-end, and transition the photo out of 'processing' within a few
+# seconds. If it doesn't, that's a regression.
 drain_ok=0
 for i in $(seq 1 30); do
     curl -sS -o "$WORK_DIR/last.body" "$BASE/api/admin/queue/stats" -H "$AUTH_H"
@@ -280,9 +280,11 @@ esac
 # Assert the worker actually wrote a recognition_items row for this photo.
 # This guards against silent regressions where the real ONNX pipeline errors
 # out and we fall back to `unmatched` without any per-photo detection trail.
-# When F1P_INFERENCE_STUB_FALLBACK=1 (the smoke default) AND the real pipeline
-# fails, the photo is marked `unmatched` BUT no detection / recognition_items
-# row is inserted, so total=0 here → this assertion catches that case.
+# If the real pipeline errors out, the worker marks the photo `unmatched`
+# WITHOUT inserting any detection / recognition_items row, so total=0 here
+# → this assertion catches that silent regression. (Operators who opt back
+# into the stub-fallback path via F1P_INFERENCE_STUB_FALLBACK=1 at runtime
+# see the same shape.)
 echo "▶ recognition: at least one recognition_items row exists for the uploaded photo"
 assert_http 200 GET "$BASE/api/projects/$PROJECT_ID/recognition_items?photo_id=$PHOTO_ID&page_size=5" -H "$AUTH_H"
 RI_TOTAL="$(jq_get "['total']")"
