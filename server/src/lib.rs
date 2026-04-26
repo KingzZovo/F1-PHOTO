@@ -4,6 +4,8 @@
 //! -> `api::router`. All real logic lives here so unit tests can exercise it.
 
 pub mod api;
+pub mod auth;
+pub mod cli;
 pub mod config;
 pub mod db;
 pub mod error;
