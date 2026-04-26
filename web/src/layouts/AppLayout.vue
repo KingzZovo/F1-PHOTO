@@ -62,7 +62,8 @@ const menu: MenuOption[] = [
   { label: "人员", key: "persons" },
   { label: "工具", key: "tools" },
   { label: "设备", key: "devices" },
-  // turn 15+ will append: work orders, recognition
+  { label: "工单", key: "work-orders" },
+  // turn 16+ will append: recognition
 ]
 
 const current = computed(() => {

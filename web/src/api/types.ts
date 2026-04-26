@@ -196,3 +196,74 @@ export interface DevicePatch {
   name?: string
   model?: string | null
 }
+
+// ---------------------------------------------------------------------------
+// Work orders
+// ---------------------------------------------------------------------------
+
+export type WorkOrderStatus = "open" | "in_progress" | "done" | "cancelled"
+
+export interface WorkOrder {
+  id: string
+  project_id: string
+  code: string
+  title?: string | null
+  status: WorkOrderStatus | string
+  created_by?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface WorkOrderInput {
+  code: string
+  title?: string | null
+  status?: WorkOrderStatus | null
+}
+
+export interface WorkOrderPatch {
+  code?: string
+  title?: string | null
+  status?: WorkOrderStatus
+}
+
+export interface WorkOrderListQuery {
+  q?: string
+  status?: WorkOrderStatus | ""
+  page?: number
+  page_size?: number
+}
+
+// ---------------------------------------------------------------------------
+// Photo uploads (multipart) + recognition items
+// ---------------------------------------------------------------------------
+
+export type OwnerType = "person" | "tool" | "device" | "wo_raw"
+export type AngleKind = "front" | "side" | "back" | "unknown"
+
+export interface PhotoUploadInput {
+  /** Local file payload to upload. */
+  file: File
+  /** Owner classification of the depicted subject. */
+  owner_type: OwnerType
+  /** Either the work_order UUID, or its `code` within the project. */
+  wo_id?: string
+  wo_code?: string
+  /** Optional pre-resolved owner UUID. */
+  owner_id?: string
+  /** Hints for owner resolution when owner_id is unset. */
+  employee_no?: string
+  sn?: string
+  /** Optional capture angle (defaults to "unknown"). */
+  angle?: AngleKind
+}
+
+export interface PhotoUploadResponse {
+  id: string
+  hash: string
+  status: string
+  deduped: boolean
+  work_order_id?: string | null
+  owner_type?: string | null
+  owner_id?: string | null
+  angle: string
+}
