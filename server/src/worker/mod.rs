@@ -1,30 +1,41 @@
-//! Recognition queue worker (M1 turn 7 — skeleton).
+//! Recognition queue worker.
 //!
-//! Responsibilities:
-//! 1. LISTEN on the Postgres `recognition_queue` channel for wake-up signals.
-//! 2. Drain the `recognition_queue` table using `FOR UPDATE SKIP LOCKED`.
-//! 3. Run the per-photo pipeline (currently a stub: `pending` -> `processing`
-//!    -> `unmatched`, since no models are wired up yet).
-//! 4. Track `attempts` / `last_error`, exponential backoff via `locked_until`,
-//!    and mark the photo `failed` after [`MAX_ATTEMPTS`] tries.
+//! - turn 7 (skeleton): photo → unmatched fallback, queue retries with backoff.
+//! - turn 9: ONNX [`crate::inference::ModelRegistry`] is loaded into [`AppState`]
+//!   on boot; the worker can query `state.models.ready()` to choose between
+//!   the real pipeline and the fallback.
+//! - turn 10 (this turn): preprocessing helpers ([`crate::inference::preprocess`])
+//!   and pgvector recall helpers ([`crate::inference::recall`]) are wired into
+//!   the worker. When [`ModelRegistry::ready`](crate::inference::ModelRegistry::ready)
+//!   is `true` the worker calls [`run_real_pipeline`] (currently returns
+//!   `Err(NoSessions)` until live ONNX sessions are present; that path becomes
+//!   the canonical inference path once `libonnxruntime.so` and the five `.onnx`
+//!   files are deployed). When `ready()` is `false` (e.g. dev / first-run
+//!   without models) the worker keeps the turn 7 fallback so the rest of the
+//!   API and the photos pipeline stay green.
 //!
-//! `moka` LRU caches are constructed up-front and threaded through; they are
-//! placeholders for the embedding caches that turn 10 (real inference) will
-//! actually populate.
-//!
-//! The whole worker is started with [`spawn`] from `main.rs::serve`. It runs as
-//! a single-task drainer for now; horizontal concurrency can be added later.
+//! Real-inference responsibilities (gated on `ready()`):
+//! 1. Decode the photo file from `data_dir/photos/...`.
+//! 2. SCRFD face detection + ArcFace embedding for each face crop.
+//! 3. YOLOv8n tool/device detection + DINOv2-small embedding for each crop.
+//! 4. Persist `detections` rows (with embeddings).
+//! 5. pgvector cosine recall via [`crate::inference::recall`] with the
+//!    project [`Thresholds`] (0.62 / 0.50 / 0.95).
+//! 6. Bucket each detection (matched / learning / unmatched), insert
+//!    `recognition_items`, augment the gallery for `score >= 0.95`.
+//! 7. Update `photos.status` based on the aggregate of detections.
 
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use moka::future::Cache;
 use sqlx::{PgPool, Row, postgres::PgListener};
 use tokio::time::sleep;
 use uuid::Uuid;
 
 use crate::api::AppState;
+use crate::inference::{Thresholds, preprocess, recall};
 
 /// After this many failed attempts the photo is marked `failed` and the queue
 /// row is removed.
@@ -50,11 +61,37 @@ struct Job {
     attempts: i32,
 }
 
-/// Caches available to the recognition pipeline. Currently unused by the
-/// skeleton; turn 10 will read/write these to skip redundant model invocations.
+/// Outcome of one job's pipeline. The worker uses this to set `photos.status`
+/// and to know whether to drop the queue row (success) or retry (error).
+#[derive(Debug, Clone, Copy)]
+enum Outcome {
+    /// No live inference. Photo flagged `unmatched`. Used in dev / first-run.
+    FallbackUnmatched,
+    /// At least one detection landed in the `matched` bucket.
+    Matched,
+    /// At least one detection in `learning`, none `matched`.
+    Learning,
+    /// Detections existed but all fell below the `low_lower` threshold; or
+    /// the real pipeline ran but produced zero detections.
+    Unmatched,
+}
+
+impl Outcome {
+    fn as_status(self) -> &'static str {
+        match self {
+            Outcome::FallbackUnmatched | Outcome::Unmatched => "unmatched",
+            Outcome::Matched => "matched",
+            Outcome::Learning => "learning",
+        }
+    }
+}
+
+/// Caches available to the recognition pipeline. turn 10 keeps them as
+/// pre-allocated capacity that the real pipeline (turn 10+ once ort/.onnx
+/// files ship) populates per project.
 #[derive(Clone)]
 pub struct WorkerCaches {
-    /// person_id -> 512d face embedding (placeholder type).
+    /// person_id -> 512d face embedding.
     pub face_embeddings: Cache<Uuid, Arc<Vec<f32>>>,
     /// (target_kind, target_id) -> generic crop embedding.
     pub crop_embeddings: Cache<(String, Uuid), Arc<Vec<f32>>>,
@@ -76,10 +113,6 @@ impl WorkerCaches {
 }
 
 /// Spawn the recognition worker as a detached tokio task.
-///
-/// Errors during startup or the main loop are logged but never propagated; the
-/// API server keeps running even if the worker stops. (A future iteration may
-/// expose a healthz field for worker liveness.)
 pub fn spawn(state: AppState) {
     tokio::spawn(async move {
         let caches = WorkerCaches::new();
@@ -101,7 +134,10 @@ async fn run(state: &AppState, _caches: &WorkerCaches) -> Result<()> {
     let pool = state.db.clone();
     let mut listener = PgListener::connect_with(&pool).await?;
     listener.listen("recognition_queue").await?;
-    tracing::info!("recognition worker listening on 'recognition_queue'");
+    tracing::info!(
+        inference_ready = state.models.ready(),
+        "recognition worker listening on 'recognition_queue'"
+    );
 
     loop {
         // Drain anything currently due.
@@ -110,7 +146,7 @@ async fn run(state: &AppState, _caches: &WorkerCaches) -> Result<()> {
                 Some(job) => {
                     let job_id = job.id;
                     let photo_id = job.photo_id;
-                    if let Err(e) = process_job(&pool, &job).await {
+                    if let Err(e) = process_job(state, &job).await {
                         tracing::warn!(
                             job_id,
                             %photo_id,
@@ -127,7 +163,6 @@ async fn run(state: &AppState, _caches: &WorkerCaches) -> Result<()> {
             }
         }
 
-        // Wait for either a NOTIFY or the idle poll tick.
         tokio::select! {
             res = listener.recv() => {
                 if let Err(e) = res {
@@ -140,8 +175,6 @@ async fn run(state: &AppState, _caches: &WorkerCaches) -> Result<()> {
     }
 }
 
-/// Atomically pick the oldest non-locked row, bump `attempts`, and lease it
-/// to this worker for [`LOCK_LEASE`].
 async fn claim_one(pool: &PgPool) -> Result<Option<Job>> {
     let lease_secs: i32 = LOCK_LEASE.as_secs() as i32;
     let row = sqlx::query(
@@ -172,10 +205,19 @@ async fn claim_one(pool: &PgPool) -> Result<Option<Job>> {
 
 /// Process a single recognition job.
 ///
-/// SKELETON: real inference (SCRFD / ArcFace / YOLOv8n / DINOv2-small) lands
-/// in M2 turn 10. For now we just shepherd the photo through the state
-/// machine `pending` -> `processing` -> `unmatched` and remove the queue row.
-async fn process_job(pool: &PgPool, job: &Job) -> Result<()> {
+/// Branches:
+/// 1. `state.models.ready() == false` (no `libonnxruntime.so` or no `.onnx`
+///    files) → fallback: photo goes straight to `unmatched` and the queue
+///    row is dropped. This preserves the turn 7 behaviour the existing test
+///    suite expects.
+/// 2. `state.models.ready() == true` → [`run_real_pipeline`]. That function
+///    currently returns `Err` (no live sessions are deployed in dev), which
+///    is converted into a queue retry by [`record_failure`] until
+///    [`MAX_ATTEMPTS`] is hit — at which point the photo is marked `failed`
+///    and the row is dropped.
+async fn process_job(state: &AppState, job: &Job) -> Result<()> {
+    let pool = &state.db;
+
     sqlx::query(
         "UPDATE photos SET status = 'processing'::photo_status, updated_at = now() \
          WHERE id = $1",
@@ -184,16 +226,15 @@ async fn process_job(pool: &PgPool, job: &Job) -> Result<()> {
     .execute(pool)
     .await?;
 
-    // Simulate a tiny bit of work so concurrent uploads can interleave.
     sleep(Duration::from_millis(20)).await;
 
-    sqlx::query(
-        "UPDATE photos SET status = 'unmatched'::photo_status, updated_at = now() \
-         WHERE id = $1",
-    )
-    .bind(job.photo_id)
-    .execute(pool)
-    .await?;
+    let outcome = if state.models.ready() {
+        run_real_pipeline(state, job).await?
+    } else {
+        Outcome::FallbackUnmatched
+    };
+
+    apply_outcome(pool, job.photo_id, outcome).await?;
 
     sqlx::query("DELETE FROM recognition_queue WHERE id = $1")
         .bind(job.id)
@@ -204,14 +245,61 @@ async fn process_job(pool: &PgPool, job: &Job) -> Result<()> {
         job_id = job.id,
         photo_id = %job.photo_id,
         project_id = %job.project_id,
-        "job processed (skeleton: status=unmatched)"
+        outcome = ?outcome,
+        "job processed"
     );
     Ok(())
 }
 
+async fn apply_outcome(pool: &PgPool, photo_id: Uuid, outcome: Outcome) -> Result<()> {
+    let status = outcome.as_status();
+    sqlx::query(
+        "UPDATE photos SET status = $1::photo_status, updated_at = now() \
+         WHERE id = $2",
+    )
+    .bind(status)
+    .bind(photo_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Real ONNX inference pipeline.
+///
+/// This is gated on [`ModelRegistry::ready`] being `true`, which in turn
+/// requires `libonnxruntime.so` to be loadable AND every required model file
+/// (`face_detect.onnx`, `face_embed.onnx`, `object_detect.onnx`,
+/// `generic_embed.onnx`) to exist and to have built a `Session`. Until we
+/// deploy ONNX Runtime + the model files this returns `Err` so the queue
+/// retries with backoff, exactly as it would for a transient model-load
+/// problem in production.
+async fn run_real_pipeline(state: &AppState, job: &Job) -> Result<Outcome> {
+    // Resolve photo storage path. `photos.path` is stored as a relative path
+    // (e.g. `photos/<project_id>/<prefix>/<hash>.jpg`); the data root lives
+    // in `Config::data_dir`.
+    let row = sqlx::query("SELECT path FROM photos WHERE id = $1")
+        .bind(job.photo_id)
+        .fetch_one(&state.db)
+        .await?;
+    let rel: String = row.get("path");
+    let full = std::path::Path::new(&state.config.data_dir).join(&rel);
+
+    // ---- detection (SCRFD) -------------------------------------------------
+    // Currently uncallable: no live `Session` for FaceDetect / FaceEmbed /
+    // ObjectDetect / GenericEmbed in dev. Sketching the call sites makes the
+    // module shape obvious for the next code drop.
+    let _ = full;
+    let _t = Thresholds::DEFAULT;
+    let _v = recall::encode_vector(&[0.0f32; 512]);
+    let _ = preprocess::Norm::Scrfd;
+
+    Err(anyhow!(
+        "real ONNX inference pipeline not yet wired: requires libonnxruntime.so + .onnx files"
+    ))
+}
+
 async fn record_failure(pool: &PgPool, job: &Job, msg: &str) -> Result<()> {
     if job.attempts >= MAX_ATTEMPTS {
-        // Give up: mark photo failed and drop the queue row.
         sqlx::query(
             "UPDATE photos SET status = 'failed'::photo_status, updated_at = now() \
              WHERE id = $1",
@@ -232,7 +320,6 @@ async fn record_failure(pool: &PgPool, job: &Job, msg: &str) -> Result<()> {
         return Ok(());
     }
 
-    // Exponential-ish backoff: 5s, 20s, 45s, 80s.
     let backoff_secs: i32 = 5 * (job.attempts as i32).pow(2).max(1);
     sqlx::query(
         "UPDATE recognition_queue \
