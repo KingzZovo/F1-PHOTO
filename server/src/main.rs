@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use f1_photo_server::{
     api,
+    worker,
     auth::{JwtCodec, jwt::DEFAULT_TTL_SECONDS, password},
     cli::{Cli, Command},
     config::Config,
@@ -45,6 +46,7 @@ async fn serve(cfg: Config) -> Result<()> {
         config: Arc::new(cfg),
         jwt,
     };
+    worker::spawn(state.clone());
     let app = api::router(state);
 
     let listener = tokio::net::TcpListener::bind(&bind_addr).await?;

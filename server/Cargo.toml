@@ -50,6 +50,7 @@ futures = "0.3"
 once_cell = "1"
 hex = "0.4"
 sha2 = "0.10"
+moka = { version = "0.12", features = ["future"] }
 
 [profile.release]
 opt-level = 3

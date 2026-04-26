@@ -1,3 +1,4 @@
+pub mod admin;
 pub mod auth;
 pub mod devices;
 pub mod health;
@@ -158,6 +159,11 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/api/devices/:id/restore",
             post(devices::restore),
+        )
+        // Admin diagnostics.
+        .route(
+            "/api/admin/queue/stats",
+            get(admin::queue_stats),
         )
         // Platform settings.
         .route(
