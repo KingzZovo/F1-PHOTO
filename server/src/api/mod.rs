@@ -2,6 +2,7 @@ pub mod auth;
 pub mod devices;
 pub mod health;
 pub mod persons;
+pub mod photos;
 pub mod projects;
 pub mod settings;
 pub mod tools;
@@ -11,6 +12,7 @@ use crate::auth::JwtCodec;
 use crate::config::Config;
 use axum::{
     Router,
+    extract::DefaultBodyLimit,
     routing::{get, patch, post},
 };
 use sqlx::PgPool;
@@ -95,6 +97,22 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/api/projects/:project_id/work_orders/:id/transition",
             post(work_orders::transition),
+        )
+        // Photos (project-scoped). DefaultBodyLimit disabled on POST so the
+        // handler can enforce settings.upload.max_mb dynamically.
+        .route(
+            "/api/projects/:project_id/photos",
+            get(photos::list).post(photos::upload).layer(DefaultBodyLimit::disable()),
+        )
+        .route(
+            "/api/projects/:project_id/photos/:id",
+            get(photos::get_one)
+                .patch(photos::patch)
+                .delete(photos::delete_one),
+        )
+        .route(
+            "/api/projects/:project_id/work_orders/:id/photos",
+            get(photos::list_by_work_order),
         )
         // Master data: persons.
         .route(
