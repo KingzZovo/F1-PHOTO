@@ -38,6 +38,12 @@ __pycache__/
 *.sqlite
 *.db
 
+# Local env / secrets
+.env
+.env.local
+.env.*.local
+!.env.example
+
 # OS
 .DS_Store
 Thumbs.db
