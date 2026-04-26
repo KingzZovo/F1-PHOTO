@@ -1,0 +1,43 @@
+# Rust
+/server/target/
+**/*.rs.bk
+Cargo.lock.bak
+
+# Node / Web
+/web/node_modules/
+/web/dist/
+/web/.vite/
+*.log
+
+# Android
+/android/.gradle/
+/android/build/
+/android/app/build/
+/android/local.properties
+*.iml
+.idea/
+.vscode/
+
+# Python (training tools)
+/tools/.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Models (large binaries; populated at install time)
+/models/*.onnx
+/models/*.pt
+/models/*.bin
+!/models/.gitkeep
+
+# Runtime data
+/data/
+/archive/
+/logs/
+/tmp/
+*.sqlite
+*.db
+
+# OS
+.DS_Store
+Thumbs.db
