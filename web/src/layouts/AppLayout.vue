@@ -58,10 +58,15 @@ const dialog = useDialog()
 
 const menu: MenuOption[] = [
   { label: "概览", key: "home" },
-  // turn 13+ will append: projects, persons/tools/devices, work orders, recognition
+  { label: "项目", key: "projects" },
+  // turn 14+ will append: persons/tools/devices, work orders, recognition
 ]
 
-const current = computed(() => (typeof route.name === "string" ? route.name : "home"))
+const current = computed(() => {
+  const n = typeof route.name === "string" ? route.name : "home"
+  if (n === "project-detail") return "projects"
+  return n
+})
 const pageTitle = computed(() => {
   const m = menu.find((x) => x.key === current.value)
   return m?.label?.toString() || ""
