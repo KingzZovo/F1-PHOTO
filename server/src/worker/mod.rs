@@ -4,20 +4,21 @@
 //! - turn 9: ONNX [`crate::inference::ModelRegistry`] is loaded into [`AppState`]
 //!   on boot; the worker can query `state.models.ready()` to choose between
 //!   the real pipeline and the fallback.
-//! - turn 10 (this turn): preprocessing helpers ([`crate::inference::preprocess`])
+//! - turn 10: preprocessing helpers ([`crate::inference::preprocess`])
 //!   and pgvector recall helpers ([`crate::inference::recall`]) are wired into
-//!   the worker. When [`ModelRegistry::ready`](crate::inference::ModelRegistry::ready)
-//!   is `true` the worker calls [`run_real_pipeline`] (currently returns
-//!   `Err(NoSessions)` until live ONNX sessions are present; that path becomes
-//!   the canonical inference path once `libonnxruntime.so` and the five `.onnx`
-//!   files are deployed). When `ready()` is `false` (e.g. dev / first-run
-//!   without models) the worker keeps the turn 7 fallback so the rest of the
-//!   API and the photos pipeline stay green.
+//!   the worker.
+//! - turn 22: GenericEmbed slot wired to a real DINOv2-small ONNX model
+//!   (whole-image stand-in for tool/device).
+//! - turn 23 (this turn): FaceDetect (SCRFD) + FaceEmbed (ArcFace 512d) slots
+//!   wired end-to-end. The face pipeline now runs **before** the DINOv2
+//!   tool/device pipeline; per-photo `Outcome` is the best bucket across all
+//!   detections (face + tool).
 //!
 //! Real-inference responsibilities (gated on `ready()`):
 //! 1. Decode the photo file from `data_dir/photos/...`.
 //! 2. SCRFD face detection + ArcFace embedding for each face crop.
 //! 3. YOLOv8n tool/device detection + DINOv2-small embedding for each crop.
+//!    (Until Step B lands, this is a single whole-image DINOv2 stand-in.)
 //! 4. Persist `detections` rows (with embeddings).
 //! 5. pgvector cosine recall via [`crate::inference::recall`] with the
 //!    project [`Thresholds`] (0.62 / 0.50 / 0.95).
@@ -35,7 +36,7 @@ use tokio::time::sleep;
 use uuid::Uuid;
 
 use crate::api::AppState;
-use crate::inference::{preprocess, recall, ModelKind, Thresholds};
+use crate::inference::{preprocess, recall, scrfd, ModelKind, Thresholds};
 
 /// After this many failed attempts the photo is marked `failed` and the queue
 /// row is removed.
@@ -205,11 +206,11 @@ async fn claim_one(pool: &PgPool) -> Result<Option<Job>> {
 ///    files) → fallback: photo goes straight to `unmatched` and the queue
 ///    row is dropped. This preserves the turn 7 behaviour the existing test
 ///    suite expects.
-/// 2. `state.models.ready() == true` → [`run_real_pipeline`]. That function
-///    currently returns `Err` (no live sessions are deployed in dev), which
-///    is converted into a queue retry by [`record_failure`] until
-///    [`MAX_ATTEMPTS`] is hit — at which point the photo is marked `failed`
-///    and the row is dropped.
+/// 2. `state.models.ready() == true` → [`run_real_pipeline`]. Errors are
+///    converted into a queue retry by [`record_failure`] until
+///    [`MAX_ATTEMPTS`] is hit (or, when `F1P_INFERENCE_STUB_FALLBACK=1`,
+///    silently downgraded to `Outcome::FallbackUnmatched` so the queue
+///    keeps draining during the gradual roll-out).
 async fn process_job(state: &AppState, job: &Job) -> Result<()> {
     let pool = &state.db;
 
@@ -227,13 +228,6 @@ async fn process_job(state: &AppState, job: &Job) -> Result<()> {
         match run_real_pipeline(state, job).await {
             Ok(o) => o,
             Err(e) if stub_fallback_enabled() => {
-                // Real SCRFD/ArcFace/YOLOv8/DINOv2 inference pipeline is not
-                // wired in this build (see docs/TODO-deferred.md). Rather
-                // than retry-and-eventually-fail every job for ~5*backoff,
-                // mark the photo `unmatched` so the queue drains cleanly
-                // and the rest of the API stays usable. Set
-                // F1P_INFERENCE_STUB_FALLBACK=0 to surface the real-pipeline
-                // error as a queue retry once production weights ship.
                 tracing::warn!(
                     job_id = job.id,
                     photo_id = %job.photo_id,
@@ -295,24 +289,26 @@ async fn apply_outcome(pool: &PgPool, photo_id: Uuid, outcome: Outcome) -> Resul
 
 /// Real ONNX inference pipeline.
 ///
-/// Gated on [`ModelRegistry::ready`] being `true` (libonnxruntime.so loaded
-/// AND every required `.onnx` Session built).
+/// Gated on [`crate::inference::ModelRegistry::ready`] being `true`
+/// (libonnxruntime.so loaded AND every required `.onnx` Session built).
 ///
-/// Current scope (turn 22): the **GenericEmbed** slot is wired to a real
-/// DINOv2-small ONNX model. The whole image is run through the embedder,
-/// producing a CLS-token embedding (384 dims) which is L2-normalised and
-/// zero-padded to the schema's `vector(512)` width. A single `detections`
-/// row is written (`target_type='tool'`, bbox = full image, score = 1.0
-/// = synthetic confidence — there is no proper detection step yet),
-/// followed by a pgvector cosine recall against the tool/device gallery,
-/// a `recognition_items` row, and (when the score crosses the augment
-/// threshold) an incremental gallery augment.
+/// Current scope (turn 23):
+/// - **FaceDetect** (SCRFD) + **FaceEmbed** (ArcFace MobileFaceNet 512d)
+///   are wired end-to-end. The whole image goes through SCRFD; each face
+///   bbox feeds into an ArcFace 112×112 crop and produces a 512-d
+///   L2-normalised embedding (NO zero padding — schema width matches).
+///   Per-face `detections` row + person-gallery recall + `recognition_items`.
+/// - **GenericEmbed** (DINOv2-small) is wired as a whole-image stand-in for
+///   tool/device detection. Produces a CLS-token embedding (384 dims) which
+///   is L2-normalised and zero-padded to 512 via [`recall::pad_to_512`].
+///   One synthetic full-image `detections` row + tool/device-gallery recall.
 ///
-/// The face-detect / face-embed / object-detect slots are NOT yet wired
-/// here — see `docs/TODO-deferred.md` §1. Until they are, faces and
-/// individual tools/devices are NOT separately localised; the per-photo
-/// outcome is whatever the whole-image DINOv2 embedding nearest-neighbours
-/// to in the existing gallery (typically `Unmatched` on a fresh install).
+/// Real **ObjectDetect** (YOLOv8n) is NOT yet wired — see
+/// `docs/TODO-deferred.md` §1. Step B replaces the whole-image stand-in.
+///
+/// The per-photo [`Outcome`] is the best bucket across all detections
+/// (face + tool): Matched > Learning > Unmatched. With zero detections the
+/// photo is flagged `Unmatched`.
 async fn run_real_pipeline(state: &AppState, job: &Job) -> Result<Outcome> {
     let pool = &state.db;
 
@@ -327,26 +323,264 @@ async fn run_real_pipeline(state: &AppState, job: &Job) -> Result<Outcome> {
     let project_id: Uuid = photo_row.get("project_id");
     let full = std::path::Path::new(&state.config.data_dir).join(&rel);
 
-    // ---- DINOv2 generic embedding on the whole image ----------------------
-    // 224x224 letterbox + ImageNet mean/std, per `preprocess::Norm::ImageNet`.
-    let (nchw, _lb, (src_w, src_h)) =
-        preprocess::decode_letterbox_nchw(&full, 224, preprocess::Norm::ImageNet)?;
+    // Decode once and reuse for both face (640) and tool (224) sub-pipelines.
+    let img = preprocess::decode_path(&full)?;
+    let src_w = img.width();
+    let src_h = img.height();
 
+    let mut buckets: Vec<recall::Bucket> = Vec::new();
+
+    // ---- face pipeline (SCRFD detect + ArcFace embed) --------------------
+    let face_buckets = run_face_pipeline(state, job, &img, src_w, src_h, project_id).await?;
+    buckets.extend(face_buckets);
+
+    // ---- tool/device pipeline (DINOv2 whole-image stand-in) --------------
+    let tool_bucket = run_tool_pipeline(state, job, &img, src_w, src_h, project_id).await?;
+    buckets.push(tool_bucket);
+
+    Ok(aggregate_outcome(&buckets))
+}
+
+/// Best-bucket aggregation across all detections in a job.
+fn aggregate_outcome(buckets: &[recall::Bucket]) -> Outcome {
+    if buckets.iter().any(|b| matches!(b, recall::Bucket::Matched)) {
+        Outcome::Matched
+    } else if buckets
+        .iter()
+        .any(|b| matches!(b, recall::Bucket::Learning))
+    {
+        Outcome::Learning
+    } else {
+        Outcome::Unmatched
+    }
+}
+
+/// SCRFD face detection → ArcFace face embedding → person-gallery recall.
+/// Persists one `detections` row per face plus a `recognition_items` row.
+/// Returns one [`recall::Bucket`] per detected face.
+async fn run_face_pipeline(
+    state: &AppState,
+    job: &Job,
+    img: &image::DynamicImage,
+    src_w: u32,
+    src_h: u32,
+    project_id: Uuid,
+) -> Result<Vec<recall::Bucket>> {
+    let pool = &state.db;
+    let det_session = state
+        .models
+        .get(ModelKind::FaceDetect)
+        .ok_or_else(|| anyhow!("FaceDetect session not loaded"))?;
+    let emb_session = state
+        .models
+        .get(ModelKind::FaceEmbed)
+        .ok_or_else(|| anyhow!("FaceEmbed session not loaded"))?;
+
+    // SCRFD preprocess: letterbox to a fixed 640×640 + Norm::Scrfd.
+    let (canvas, lb) = preprocess::letterbox(img, scrfd::INPUT_SIZE);
+    let nchw = preprocess::to_nchw(&canvas, preprocess::Norm::Scrfd);
+    let dims = nchw.shape().to_vec();
+    let data: Vec<f32> = nchw.iter().copied().collect();
+    let input_tensor = ort::value::Tensor::from_array((dims, data))?;
+    // Positional inputs work regardless of the model's input name (SCRFD
+    // det_500m exports it as `input.1`).
+    let det_outputs = det_session.run(ort::inputs![input_tensor]?)?;
+
+    // Pull the 9 SCRFD outputs by their declared name (in session order):
+    // The buffalo_s `det_500m.onnx` exports outputs grouped by *head* then
+    // by stride, not by level. Confirmed live from the model registry:
+    //   ["443", "468", "493",   // scores @ s8, s16, s32   (12800, 3200, 800)
+    //    "446", "471", "496",   // bboxes @ s8, s16, s32   (4 each)
+    //    "449", "474", "499"]   // kps    @ s8, s16, s32   (10 each)
+    let out_names: Vec<String> = det_session.outputs.iter().map(|o| o.name.clone()).collect();
+    if out_names.len() != 9 {
+        return Err(anyhow!(
+            "SCRFD expected 9 outputs, got {}: {:?}",
+            out_names.len(),
+            out_names
+        ));
+    }
+    let mut flat: Vec<Vec<f32>> = Vec::with_capacity(9);
+    for name in &out_names {
+        let view = det_outputs[name.as_str()].try_extract_tensor::<f32>()?;
+        flat.push(view.iter().copied().collect());
+    }
+
+    let dets = scrfd::decode_outputs(
+        [&flat[0], &flat[1], &flat[2]],
+        [&flat[3], &flat[4], &flat[5]],
+        [&flat[6], &flat[7], &flat[8]],
+        lb,
+        src_w,
+        src_h,
+    )?;
+
+    tracing::info!(
+        job_id = job.id,
+        photo_id = %job.photo_id,
+        face_count = dets.len(),
+        "SCRFD detected faces"
+    );
+
+    let thresholds = Thresholds::DEFAULT;
+    let mut buckets: Vec<recall::Bucket> = Vec::with_capacity(dets.len());
+
+    for det in &dets {
+        // ArcFace per-face: 112×112 tight crop + Norm::ArcFace.
+        let nchw = preprocess::crop_to_nchw(img, det.bbox, 112, preprocess::Norm::ArcFace);
+        let dims = nchw.shape().to_vec();
+        let data: Vec<f32> = nchw.iter().copied().collect();
+        let face_input = ort::value::Tensor::from_array((dims, data))?;
+        let emb_outputs = emb_session.run(ort::inputs![face_input]?)?;
+
+        let emb_out_name = emb_session
+            .outputs
+            .first()
+            .ok_or_else(|| anyhow!("FaceEmbed has no outputs"))?
+            .name
+            .clone();
+        let view = emb_outputs[emb_out_name.as_str()].try_extract_tensor::<f32>()?;
+        // ArcFace MobileFaceNet output is (1, 512). Iterate flat (one face).
+        let mut emb: Vec<f32> = view.iter().copied().collect();
+        if emb.is_empty() {
+            return Err(anyhow!("ArcFace produced an empty embedding"));
+        }
+        recall::l2_normalize(&mut emb);
+
+        // Production face_embed.onnx (ArcFace) is 512-d; do NOT pad. Defensive
+        // fallback only fires if the slot is replaced with a different
+        // architecture later — surface it as a warning so it's noticed.
+        if emb.len() != 512 {
+            tracing::warn!(
+                emb_dim = emb.len(),
+                "ArcFace embedding is not 512-d; adapting to schema width via pad_to_512"
+            );
+            emb = recall::pad_to_512(&emb);
+        }
+
+        // Persist detection row with `target_type='face'`.
+        let bbox_json = serde_json::json!({
+            "x1": det.bbox.0,
+            "y1": det.bbox.1,
+            "x2": det.bbox.2,
+            "y2": det.bbox.3,
+            "kps": det.kps.iter().map(|(x, y)| serde_json::json!([*x, *y])).collect::<Vec<_>>(),
+            "source": "scrfd",
+        });
+        let v_pg = recall::encode_vector(&emb);
+        let detection_id: i64 = sqlx::query_scalar(
+            "INSERT INTO detections \
+             (project_id, photo_id, target_type, bbox, score, embedding, match_status) \
+             VALUES ($1, $2, 'face'::detect_target, $3, $4, $5::vector, 'unmatched'::match_status) \
+             RETURNING id",
+        )
+        .bind(project_id)
+        .bind(job.photo_id)
+        .bind(&bbox_json)
+        .bind(det.score)
+        .bind(&v_pg)
+        .fetch_one(pool)
+        .await?;
+
+        // pgvector cosine recall against the person gallery.
+        let hit = recall::top1_face(pool, &emb).await?;
+        let (bucket, owner_type, owner_id, score) = match &hit {
+            Some(h) => (
+                h.bucket(thresholds),
+                Some(h.owner_type.clone()),
+                Some(h.owner_id),
+                Some(h.score),
+            ),
+            None => (recall::Bucket::Unmatched, None, None, None),
+        };
+        let status_str = match bucket {
+            recall::Bucket::Matched => "matched",
+            recall::Bucket::Learning => "learning",
+            recall::Bucket::Unmatched => "unmatched",
+        };
+
+        sqlx::query(
+            "UPDATE detections SET \
+                 match_status = $1::match_status, \
+                 matched_owner_type = $2::owner_type, \
+                 matched_owner_id = $3, \
+                 matched_score = $4 \
+             WHERE id = $5",
+        )
+        .bind(status_str)
+        .bind(owner_type.as_deref())
+        .bind(owner_id)
+        .bind(score)
+        .bind(detection_id)
+        .execute(pool)
+        .await?;
+
+        sqlx::query(
+            "INSERT INTO recognition_items \
+             (project_id, photo_id, detection_id, status, \
+              suggested_owner_type, suggested_owner_id, suggested_score) \
+             VALUES ($1, $2, $3, $4::match_status, $5::owner_type, $6, $7)",
+        )
+        .bind(project_id)
+        .bind(job.photo_id)
+        .bind(detection_id)
+        .bind(status_str)
+        .bind(owner_type.as_deref())
+        .bind(owner_id)
+        .bind(score)
+        .execute(pool)
+        .await?;
+
+        if let (Some(h), recall::Bucket::Matched) = (&hit, bucket) {
+            if h.score >= thresholds.augment_upper {
+                recall::augment(
+                    pool,
+                    &h.owner_type,
+                    h.owner_id,
+                    &emb,
+                    job.photo_id,
+                    project_id,
+                )
+                .await?;
+            }
+        }
+        buckets.push(bucket);
+    }
+
+    Ok(buckets)
+}
+
+/// DINOv2-small whole-image generic embedding → tool/device-gallery recall.
+/// Persists one synthetic full-image `detections` row + a `recognition_items`
+/// row. Returns the recall bucket. Step B replaces this with a real YOLOv8
+/// detector + per-crop DINOv2 embeddings.
+async fn run_tool_pipeline(
+    state: &AppState,
+    job: &Job,
+    img: &image::DynamicImage,
+    src_w: u32,
+    src_h: u32,
+    project_id: Uuid,
+) -> Result<recall::Bucket> {
+    let pool = &state.db;
     let session = state
         .models
         .get(ModelKind::GenericEmbed)
         .ok_or_else(|| anyhow!("GenericEmbed session not loaded"))?;
 
+    // 224×224 letterbox + ImageNet mean/std for DINOv2.
+    let (canvas, _lb) = preprocess::letterbox(img, 224);
+    let nchw = preprocess::to_nchw(&canvas, preprocess::Norm::ImageNet);
+
     // ort 2.0.0-rc.9 internally bundles ndarray 0.16, but this crate's
     // `preprocess` module uses ndarray 0.15 (`Array4<f32>` is therefore a
     // *different* type from ort's perspective and not assignable to its
     // `IntoValueTensor`). Side-step the version skew by feeding ort the
-    // `(shape, Vec<T>)` form, which is one of the supported input shapes
-    // and is independent of the ndarray version.
-    let dims = nchw.shape().to_vec(); // [1, 3, 224, 224]
-    let data: Vec<f32> = nchw.iter().copied().collect(); // row-major NCHW
+    // `(shape, Vec<T>)` form.
+    let dims = nchw.shape().to_vec();
+    let data: Vec<f32> = nchw.iter().copied().collect();
     let pixel_values = ort::value::Tensor::from_array((dims, data))?;
-    let outputs = session.run(ort::inputs! { "pixel_values" => pixel_values }?)?;
+    let outputs = session.run(ort::inputs![pixel_values]?)?;
 
     // DINOv2-small output: shape (B=1, 257, 384). Token 0 is the CLS embedding.
     let raw_view = outputs["last_hidden_state"].try_extract_tensor::<f32>()?;
@@ -362,7 +596,6 @@ async fn run_real_pipeline(state: &AppState, job: &Job) -> Result<Outcome> {
     recall::l2_normalize(&mut emb);
     let emb_512 = recall::pad_to_512(&emb);
 
-    // ---- detection row (synthetic single full-image detection) ------------
     let bbox = serde_json::json!({
         "x1": 0,
         "y1": 0,
@@ -385,7 +618,6 @@ async fn run_real_pipeline(state: &AppState, job: &Job) -> Result<Outcome> {
     .fetch_one(pool)
     .await?;
 
-    // ---- pgvector cosine recall against the tool/device gallery -----------
     let hit = recall::top1_object(pool, &emb_512).await?;
     let thresholds = Thresholds::DEFAULT;
     let (bucket, suggested_owner_type, suggested_owner_id, suggested_score) = match &hit {
@@ -406,7 +638,6 @@ async fn run_real_pipeline(state: &AppState, job: &Job) -> Result<Outcome> {
         recall::Bucket::Unmatched => "unmatched",
     };
 
-    // Update detection with recall result.
     sqlx::query(
         "UPDATE detections SET \
              match_status = $1::match_status, \
@@ -423,7 +654,6 @@ async fn run_real_pipeline(state: &AppState, job: &Job) -> Result<Outcome> {
     .execute(pool)
     .await?;
 
-    // Insert the recognition_items row that surfaces this detection in the UI.
     sqlx::query(
         "INSERT INTO recognition_items \
          (project_id, photo_id, detection_id, status, \
@@ -440,7 +670,6 @@ async fn run_real_pipeline(state: &AppState, job: &Job) -> Result<Outcome> {
     .execute(pool)
     .await?;
 
-    // Augment the gallery on a strong match so it adapts over time.
     if let (Some(h), recall::Bucket::Matched) = (&hit, bucket) {
         if h.score >= thresholds.augment_upper {
             recall::augment(
@@ -455,11 +684,7 @@ async fn run_real_pipeline(state: &AppState, job: &Job) -> Result<Outcome> {
         }
     }
 
-    Ok(match bucket {
-        recall::Bucket::Matched => Outcome::Matched,
-        recall::Bucket::Learning => Outcome::Learning,
-        recall::Bucket::Unmatched => Outcome::Unmatched,
-    })
+    Ok(bucket)
 }
 
 async fn record_failure(pool: &PgPool, job: &Job, msg: &str) -> Result<()> {
@@ -497,4 +722,33 @@ async fn record_failure(pool: &PgPool, job: &Job, msg: &str) -> Result<()> {
     .execute(pool)
     .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::inference::recall::Bucket;
+
+    #[test]
+    fn aggregate_outcome_empty_is_unmatched() {
+        assert!(matches!(aggregate_outcome(&[]), Outcome::Unmatched));
+    }
+
+    #[test]
+    fn aggregate_outcome_prefers_matched() {
+        let out = aggregate_outcome(&[Bucket::Unmatched, Bucket::Learning, Bucket::Matched]);
+        assert!(matches!(out, Outcome::Matched));
+    }
+
+    #[test]
+    fn aggregate_outcome_learning_when_no_match() {
+        let out = aggregate_outcome(&[Bucket::Unmatched, Bucket::Learning, Bucket::Unmatched]);
+        assert!(matches!(out, Outcome::Learning));
+    }
+
+    #[test]
+    fn aggregate_outcome_unmatched_when_all_unmatched() {
+        let out = aggregate_outcome(&[Bucket::Unmatched, Bucket::Unmatched]);
+        assert!(matches!(out, Outcome::Unmatched));
+    }
 }
