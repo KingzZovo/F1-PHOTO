@@ -1,11 +1,12 @@
 pub mod auth;
 pub mod health;
+pub mod projects;
 
 use crate::auth::JwtCodec;
 use crate::config::Config;
 use axum::{
     Router,
-    routing::{get, post},
+    routing::{get, patch, post},
 };
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -21,26 +22,47 @@ pub struct AppState {
 
 /// Build the top-level axum router.
 ///
-/// Current surface:
-///   - `/healthz`, `/readyz`         (unauthenticated health probes)
-///   - `/api/auth/login`             (no auth)
-///   - `/api/auth/logout`            (auth required)
-///   - `/api/auth/me`                (auth required)
-///
-/// Projects, master data, photos and admin endpoints are added in
-/// subsequent commits.
+/// Note: this project is on axum 0.7, which uses the colon-prefix path
+/// parameter syntax (`/:project_id`). The `{project_id}` brace syntax
+/// belongs to axum 0.8 and is treated as a literal segment in 0.7.
 pub fn router(state: AppState) -> Router {
-    let api_auth = Router::new()
-        .route("/login", post(auth::login))
-        .route("/logout", post(auth::logout))
-        .route("/me", get(auth::me));
-
-    let api = Router::new().nest("/auth", api_auth);
-
     Router::new()
+        // Liveness / readiness.
         .route("/healthz", get(health::healthz))
         .route("/readyz", get(health::readyz))
-        .nest("/api", api)
+        // Auth.
+        .route("/api/auth/login", post(auth::login))
+        .route("/api/auth/logout", post(auth::logout))
+        .route("/api/auth/me", get(auth::me))
+        // Projects: list + create.
+        .route(
+            "/api/projects",
+            get(projects::list_projects).post(projects::create_project),
+        )
+        // Projects: single resource.
+        .route(
+            "/api/projects/:project_id",
+            get(projects::get_project)
+                .patch(projects::patch_project)
+                .delete(projects::archive_project),
+        )
+        .route(
+            "/api/projects/:project_id/me",
+            get(projects::get_my_perms),
+        )
+        .route(
+            "/api/projects/:project_id/unarchive",
+            post(projects::unarchive_project),
+        )
+        // Members.
+        .route(
+            "/api/projects/:project_id/members",
+            get(projects::list_members).post(projects::add_member),
+        )
+        .route(
+            "/api/projects/:project_id/members/:user_id",
+            patch(projects::patch_member).delete(projects::remove_member),
+        )
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
