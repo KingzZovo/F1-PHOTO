@@ -3,7 +3,9 @@ pub mod devices;
 pub mod health;
 pub mod persons;
 pub mod projects;
+pub mod settings;
 pub mod tools;
+pub mod work_orders;
 
 use crate::auth::JwtCodec;
 use crate::config::Config;
@@ -27,7 +29,7 @@ pub struct AppState {
 ///
 /// Shared by handlers that translate INSERT / UPDATE conflicts into 409
 /// `CONFLICT` (e.g. duplicate `projects.code`, `persons.employee_no`,
-/// `tools.sn`, `devices.sn`).
+/// `tools.sn`, `devices.sn`, `work_orders(project_id, code)`).
 pub(crate) fn is_unique_violation(e: &sqlx::Error) -> bool {
     if let sqlx::Error::Database(db_err) = e {
         db_err.code().as_deref() == Some("23505")
@@ -79,6 +81,21 @@ pub fn router(state: AppState) -> Router {
             "/api/projects/:project_id/members/:user_id",
             patch(projects::patch_member).delete(projects::remove_member),
         )
+        // Work orders (project-scoped).
+        .route(
+            "/api/projects/:project_id/work_orders",
+            get(work_orders::list).post(work_orders::create),
+        )
+        .route(
+            "/api/projects/:project_id/work_orders/:id",
+            get(work_orders::get_one)
+                .patch(work_orders::patch)
+                .delete(work_orders::hard_delete),
+        )
+        .route(
+            "/api/projects/:project_id/work_orders/:id/transition",
+            post(work_orders::transition),
+        )
         // Master data: persons.
         .route(
             "/api/persons",
@@ -123,6 +140,11 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/api/devices/:id/restore",
             post(devices::restore),
+        )
+        // Platform settings.
+        .route(
+            "/api/settings",
+            get(settings::get_all).patch(settings::patch_all),
         )
         .layer(TraceLayer::new_for_http())
         .with_state(state)
