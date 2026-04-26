@@ -52,6 +52,14 @@ hex = "0.4"
 sha2 = "0.10"
 moka = { version = "0.12", features = ["future"] }
 
+# ONNX Runtime bindings (M2 turn 9). load-dynamic means we don't need
+# libonnxruntime at compile time; at runtime we look for it via
+# ORT_DYLIB_PATH or the system loader. Missing libs and missing model files
+# are handled gracefully so the dev server still boots without them.
+ort = { version = "=2.0.0-rc.9", default-features = false, features = ["load-dynamic", "ndarray"] }
+ort-sys = "=2.0.0-rc.9"
+ndarray = "0.15"
+
 [profile.release]
 opt-level = 3
 lto = "thin"

@@ -4,6 +4,8 @@
 //! - GET /api/admin/queue/stats: snapshot of `recognition_queue` and
 //!   per-status photo counts. Useful for smoke-testing the worker and as
 //!   a base for the M3 admin dashboard.
+//! - GET /api/admin/models: snapshot of the loaded ONNX model registry
+//!   (which slots are filled, which files / libraries are missing).
 
 use axum::{Json, extract::State, http::StatusCode};
 use serde::Serialize;
@@ -12,6 +14,7 @@ use sqlx::Row;
 use crate::api::AppState;
 use crate::auth::RequireAdmin;
 use crate::error::AppResult;
+use crate::inference::ModelRegistryStatus;
 
 #[derive(Debug, Serialize)]
 pub struct QueueStats {
@@ -68,4 +71,16 @@ pub async fn queue_stats(
     };
 
     Ok((StatusCode::OK, Json(stats)))
+}
+
+/// GET /api/admin/models — return a snapshot of the model registry.
+///
+/// Always 200 even when ORT or model files are missing; the JSON body
+/// reports `ort_available=false` / per-model `loaded=false` so callers
+/// (admin UI, ops scripts) can tell what's wrong without grepping logs.
+pub async fn list_models(
+    _admin: RequireAdmin,
+    State(s): State<AppState>,
+) -> AppResult<(StatusCode, Json<ModelRegistryStatus>)> {
+    Ok((StatusCode::OK, Json(s.models.status())))
 }

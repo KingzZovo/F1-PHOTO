@@ -1,8 +1,9 @@
 //! CLI surface for the `f1photo` binary.
 //!
 //! Default subcommand is `serve` (running the HTTP server). Operational
-//! subcommands such as `bootstrap-admin` are kept in the same binary so a
-//! single deployment artefact can both run and be administered.
+//! subcommands such as `bootstrap-admin` and `models check` are kept in the
+//! same binary so a single deployment artefact can both run and be
+//! administered.
 
 use clap::{Parser, Subcommand};
 
@@ -35,4 +36,18 @@ pub enum Command {
         #[arg(long)]
         full_name: Option<String>,
     },
+
+    /// ONNX model registry maintenance.
+    Models {
+        #[command(subcommand)]
+        action: ModelsAction,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ModelsAction {
+    /// Probe the configured `models_dir`, try to load every model, and
+    /// print a human-readable summary. Exits 0 even when ORT is not
+    /// installed so it's safe to run on hosts without `libonnxruntime.so`.
+    Check,
 }

@@ -1,5 +1,6 @@
 use anyhow::{Context, Result, bail};
 use std::env;
+use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -8,6 +9,12 @@ pub struct Config {
     pub jwt_secret: String,
     pub data_dir: String,
     pub max_upload_mb: u64,
+    /// Where ONNX model files (`face_detect.onnx`, etc.) are looked up.
+    /// Override with `F1P_MODELS_DIR`. Defaults to `./models/`.
+    pub models_dir: PathBuf,
+    /// Per-session intra-op thread count for ONNX Runtime. Override with
+    /// `F1P_INFERENCE_THREADS`. Defaults to 4 (CPU INT8 on the 10C/20T host).
+    pub inference_intra_threads: usize,
 }
 
 impl Config {
@@ -28,6 +35,14 @@ impl Config {
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(10);
+        let models_dir = env::var("F1P_MODELS_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from("./models"));
+        let inference_intra_threads = env::var("F1P_INFERENCE_THREADS")
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok())
+            .filter(|n| *n > 0)
+            .unwrap_or(4);
 
         Ok(Self {
             bind_addr,
@@ -35,6 +50,8 @@ impl Config {
             jwt_secret,
             data_dir,
             max_upload_mb,
+            models_dir,
+            inference_intra_threads,
         })
     }
 }

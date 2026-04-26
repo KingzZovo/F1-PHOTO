@@ -12,6 +12,7 @@ pub mod work_orders;
 
 use crate::auth::JwtCodec;
 use crate::config::Config;
+use crate::inference::ModelRegistry;
 use axum::{
     Router,
     extract::DefaultBodyLimit,
@@ -27,6 +28,10 @@ pub struct AppState {
     pub db: PgPool,
     pub config: Arc<Config>,
     pub jwt: Arc<JwtCodec>,
+    /// Loaded ONNX model registry. Always present; `models.ready()` reports
+    /// whether real inference is available. The worker treats unloaded
+    /// registries as "no inference" and falls back to its turn-7 behaviour.
+    pub models: Arc<ModelRegistry>,
 }
 
 /// Returns true if the sqlx error is a Postgres `unique_violation` (23505).
@@ -186,6 +191,10 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/api/admin/queue/stats",
             get(admin::queue_stats),
+        )
+        .route(
+            "/api/admin/models",
+            get(admin::list_models),
         )
         // Platform settings.
         .route(

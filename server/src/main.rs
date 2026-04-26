@@ -4,11 +4,10 @@ use std::sync::Arc;
 
 use f1_photo_server::{
     api,
-    worker,
     auth::{JwtCodec, jwt::DEFAULT_TTL_SECONDS, password},
-    cli::{Cli, Command},
+    cli::{Cli, Command, ModelsAction},
     config::Config,
-    db, logging,
+    db, inference, logging, worker,
 };
 
 #[tokio::main]
@@ -24,6 +23,9 @@ async fn main() -> Result<()> {
             password,
             full_name,
         } => bootstrap_admin(cfg, &username, &password, full_name.as_deref()).await,
+        Command::Models { action } => match action {
+            ModelsAction::Check => models_check(cfg),
+        },
     }
 }
 
@@ -41,10 +43,38 @@ async fn serve(cfg: Config) -> Result<()> {
 
     let jwt = Arc::new(JwtCodec::new(&cfg.jwt_secret, DEFAULT_TTL_SECONDS));
 
+    // Load ONNX model registry up-front so /api/admin/models and the
+    // worker can both observe a stable snapshot. Loading is best-effort:
+    // missing libonnxruntime / model files are reflected in the status
+    // and inference is left disabled.
+    let registry = inference::ModelRegistry::load(
+        cfg.models_dir.clone(),
+        cfg.inference_intra_threads,
+    );
+    let status = registry.status();
+    let loaded_count = status.models.iter().filter(|m| m.loaded).count();
+    let missing_required: Vec<&str> = status
+        .models
+        .iter()
+        .filter(|m| !m.optional && !m.loaded)
+        .map(|m| m.file_name)
+        .collect();
+    tracing::info!(
+        models_dir = %status.models_dir,
+        ort_available = status.ort_available,
+        ready = status.ready,
+        loaded = loaded_count,
+        total = status.models.len(),
+        missing_required = ?missing_required,
+        "inference model registry initialised"
+    );
+    let models = Arc::new(registry);
+
     let state = api::AppState {
         db: pool,
         config: Arc::new(cfg),
         jwt,
+        models,
     };
     worker::spawn(state.clone());
     let app = api::router(state);
@@ -95,6 +125,55 @@ async fn bootstrap_admin(
         println!("✓ created admin user '{username}'");
     } else {
         println!("✓ updated admin user '{username}' (password reset, role forced to admin)");
+    }
+    Ok(())
+}
+
+/// `f1photo models check` — probe the configured `models_dir` and print a
+/// human-readable summary. Always exits 0 (even when ORT is missing) so it
+/// can be safely wired into ops smoke checks.
+fn models_check(cfg: Config) -> Result<()> {
+    let registry = inference::ModelRegistry::load(
+        cfg.models_dir.clone(),
+        cfg.inference_intra_threads,
+    );
+    let status = registry.status();
+
+    println!("models_dir       : {}", status.models_dir);
+    println!("intra_threads    : {}", status.intra_threads);
+    println!(
+        "ort_available    : {}{}",
+        status.ort_available,
+        match &status.ort_init_error {
+            Some(e) => format!("  (error: {e})"),
+            None => String::new(),
+        }
+    );
+    println!("ready            : {}", status.ready);
+    println!();
+    println!(
+        "{:<14}  {:<28}  {:<8}  {:<8}  {:<10}  {}",
+        "kind", "file", "present", "loaded", "optional", "bytes"
+    );
+    println!("{}", "-".repeat(96));
+    for m in &status.models {
+        let kind = format!("{:?}", m.kind);
+        let bytes = m
+            .file_bytes
+            .map(|b| b.to_string())
+            .unwrap_or_else(|| "-".to_string());
+        println!(
+            "{:<14}  {:<28}  {:<8}  {:<8}  {:<10}  {}",
+            kind,
+            m.file_name,
+            m.file_present,
+            m.loaded,
+            m.optional,
+            bytes,
+        );
+        if let Some(err) = &m.error {
+            println!("  ! error: {err}");
+        }
     }
     Ok(())
 }
