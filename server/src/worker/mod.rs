@@ -13,12 +13,21 @@
 //!   wired end-to-end. The face pipeline now runs **before** the DINOv2
 //!   tool/device pipeline; per-photo `Outcome` is the best bucket across all
 //!   detections (face + tool).
+//! - turn 23 Step B: ObjectDetect (YOLOv8n COCO) wired end-to-end. The
+//!   tool/device pipeline now runs YOLOv8 first, then takes per-detection
+//!   crops through DINOv2-small for re-identification against the project's
+//!   tool/device gallery. When YOLOv8 finds nothing, the pipeline falls back
+//!   to a single whole-image DINOv2 detection (preserves prior behaviour and
+//!   keeps `recognition_items` non-empty in smoke). YOLOv8n is COCO-trained
+//!   so its class labels are unrelated to F1-photo's taxonomy — see
+//!   `docs/TODO-deferred.md` §1 for the fine-tune follow-up.
 //!
 //! Real-inference responsibilities (gated on `ready()`):
 //! 1. Decode the photo file from `data_dir/photos/...`.
 //! 2. SCRFD face detection + ArcFace embedding for each face crop.
 //! 3. YOLOv8n tool/device detection + DINOv2-small embedding for each crop.
-//!    (Until Step B lands, this is a single whole-image DINOv2 stand-in.)
+//!    Falls back to a single whole-image DINOv2 detection when YOLOv8
+//!    proposes no boxes for the photo.
 //! 4. Persist `detections` rows (with embeddings).
 //! 5. pgvector cosine recall via [`crate::inference::recall`] with the
 //!    project [`Thresholds`] (0.62 / 0.50 / 0.95).
@@ -36,7 +45,7 @@ use tokio::time::sleep;
 use uuid::Uuid;
 
 use crate::api::AppState;
-use crate::inference::{preprocess, recall, scrfd, ModelKind, Thresholds};
+use crate::inference::{preprocess, recall, scrfd, yolov8, ModelKind, Thresholds};
 
 /// After this many failed attempts the photo is marked `failed` and the queue
 /// row is removed.
@@ -292,19 +301,25 @@ async fn apply_outcome(pool: &PgPool, photo_id: Uuid, outcome: Outcome) -> Resul
 /// Gated on [`crate::inference::ModelRegistry::ready`] being `true`
 /// (libonnxruntime.so loaded AND every required `.onnx` Session built).
 ///
-/// Current scope (turn 23):
+/// Current scope (turn 23 + Step B):
 /// - **FaceDetect** (SCRFD) + **FaceEmbed** (ArcFace MobileFaceNet 512d)
 ///   are wired end-to-end. The whole image goes through SCRFD; each face
 ///   bbox feeds into an ArcFace 112×112 crop and produces a 512-d
 ///   L2-normalised embedding (NO zero padding — schema width matches).
 ///   Per-face `detections` row + person-gallery recall + `recognition_items`.
-/// - **GenericEmbed** (DINOv2-small) is wired as a whole-image stand-in for
-///   tool/device detection. Produces a CLS-token embedding (384 dims) which
-///   is L2-normalised and zero-padded to 512 via [`recall::pad_to_512`].
-///   One synthetic full-image `detections` row + tool/device-gallery recall.
+/// - **ObjectDetect** (YOLOv8n COCO) + **GenericEmbed** (DINOv2-small) are
+///   wired end-to-end for tool/device. YOLOv8 proposes object boxes; each
+///   crop runs DINOv2 to produce a CLS-token embedding (384 dims) which is
+///   L2-normalised and zero-padded to 512 via [`recall::pad_to_512`]. One
+///   `detections` row + `recognition_items` row per detected object, recall
+///   against the tool/device gallery. When YOLOv8 finds nothing the pipeline
+///   degrades to a single whole-image DINOv2 detection.
 ///
-/// Real **ObjectDetect** (YOLOv8n) is NOT yet wired — see
-/// `docs/TODO-deferred.md` §1. Step B replaces the whole-image stand-in.
+/// Caveat: yolov8n is COCO-trained. Its class labels do not match the
+/// project's tool/device taxonomy; we use it purely as a region proposer
+/// and rely on the DINOv2 embedding + per-project gallery for actual
+/// re-identification. Fine-tuning a domain-specific detector is tracked in
+/// `docs/TODO-deferred.md` §1.
 ///
 /// The per-photo [`Outcome`] is the best bucket across all detections
 /// (face + tool): Matched > Learning > Unmatched. With zero detections the
@@ -334,9 +349,9 @@ async fn run_real_pipeline(state: &AppState, job: &Job) -> Result<Outcome> {
     let face_buckets = run_face_pipeline(state, job, &img, src_w, src_h, project_id).await?;
     buckets.extend(face_buckets);
 
-    // ---- tool/device pipeline (DINOv2 whole-image stand-in) --------------
-    let tool_bucket = run_tool_pipeline(state, job, &img, src_w, src_h, project_id).await?;
-    buckets.push(tool_bucket);
+    // ---- tool/device pipeline (YOLOv8 detect + DINOv2 per-crop embed) ----
+    let tool_buckets = run_tool_pipeline(state, job, &img, src_w, src_h, project_id).await?;
+    buckets.extend(tool_buckets);
 
     Ok(aggregate_outcome(&buckets))
 }
@@ -550,10 +565,22 @@ async fn run_face_pipeline(
     Ok(buckets)
 }
 
-/// DINOv2-small whole-image generic embedding → tool/device-gallery recall.
-/// Persists one synthetic full-image `detections` row + a `recognition_items`
-/// row. Returns the recall bucket. Step B replaces this with a real YOLOv8
-/// detector + per-crop DINOv2 embeddings.
+/// YOLOv8n object detection → DINOv2-small per-crop embedding →
+/// tool/device-gallery recall.
+///
+/// For each YOLOv8 detection, this function persists one `detections` row
+/// (`target_type='tool'`) with the per-crop DINOv2 embedding plus a matching
+/// `recognition_items` row, and returns the recall bucket. When YOLOv8
+/// proposes zero boxes the function falls back to a single whole-image
+/// DINOv2 detection (`source="dinov2_whole_image_fallback"`) so that the
+/// pipeline still produces a `detections`/`recognition_items` pair per
+/// photo — important both for smoke evidence and so an Unmatched bucket
+/// still propagates into the per-photo aggregate.
+///
+/// yolov8n is COCO-trained: its class labels are unrelated to F1-photo's
+/// `tools`/`devices` taxonomy. We use it strictly as a region proposer; the
+/// actual re-identification happens via DINOv2 + per-project gallery cosine
+/// recall. See `docs/TODO-deferred.md` §1.
 async fn run_tool_pipeline(
     state: &AppState,
     job: &Job,
@@ -561,31 +588,123 @@ async fn run_tool_pipeline(
     src_w: u32,
     src_h: u32,
     project_id: Uuid,
-) -> Result<recall::Bucket> {
-    let pool = &state.db;
-    let session = state
+) -> Result<Vec<recall::Bucket>> {
+    let det_session = state
+        .models
+        .get(ModelKind::ObjectDetect)
+        .ok_or_else(|| anyhow!("ObjectDetect session not loaded"))?;
+    let emb_session = state
         .models
         .get(ModelKind::GenericEmbed)
         .ok_or_else(|| anyhow!("GenericEmbed session not loaded"))?;
 
-    // 224×224 letterbox + ImageNet mean/std for DINOv2.
-    let (canvas, _lb) = preprocess::letterbox(img, 224);
-    let nchw = preprocess::to_nchw(&canvas, preprocess::Norm::ImageNet);
+    // YOLOv8 preprocess: letterbox to 640x640 + Norm::Unit (px / 255).
+    let (canvas, lb) = preprocess::letterbox(img, yolov8::INPUT_SIZE);
+    let nchw = preprocess::to_nchw(&canvas, preprocess::Norm::Unit);
+    let dims = nchw.shape().to_vec();
+    let data: Vec<f32> = nchw.iter().copied().collect();
+    let yolo_input = ort::value::Tensor::from_array((dims, data))?;
+    let yolo_outputs = det_session.run(ort::inputs![yolo_input]?)?;
 
-    // ort 2.0.0-rc.9 internally bundles ndarray 0.16, but this crate's
-    // `preprocess` module uses ndarray 0.15 (`Array4<f32>` is therefore a
-    // *different* type from ort's perspective and not assignable to its
-    // `IntoValueTensor`). Side-step the version skew by feeding ort the
-    // `(shape, Vec<T>)` form.
+    // YOLOv8 has a single output named (by ultralytics export) `output0`.
+    // Fall back to the first declared output if a future export renames it.
+    let out_name: String = det_session
+        .outputs
+        .first()
+        .ok_or_else(|| anyhow!("ObjectDetect has no outputs"))?
+        .name
+        .clone();
+    let view = yolo_outputs[out_name.as_str()].try_extract_tensor::<f32>()?;
+    let flat: Vec<f32> = view.iter().copied().collect();
+    let dets = yolov8::decode_outputs(
+        &flat,
+        lb,
+        src_w,
+        src_h,
+        yolov8::DEFAULT_CONF,
+        yolov8::DEFAULT_IOU,
+    )?;
+
+    tracing::info!(
+        job_id = job.id,
+        photo_id = %job.photo_id,
+        object_count = dets.len(),
+        "YOLOv8 detected objects"
+    );
+
+    let thresholds = Thresholds::DEFAULT;
+    let mut buckets: Vec<recall::Bucket> = Vec::new();
+
+    if dets.is_empty() {
+        // No proposals: fall back to a whole-image DINOv2 embedding so the
+        // pipeline still emits a detections/recognition_items pair.
+        let bucket = embed_and_persist_object(
+            state,
+            job,
+            project_id,
+            (0.0, 0.0, src_w as f32, src_h as f32),
+            1.0,
+            "dinov2_whole_image_fallback",
+            None,
+            img,
+            emb_session,
+            thresholds,
+        )
+        .await?;
+        buckets.push(bucket);
+        return Ok(buckets);
+    }
+
+    for det in &dets {
+        let bucket = embed_and_persist_object(
+            state,
+            job,
+            project_id,
+            det.bbox,
+            det.score,
+            "yolov8",
+            Some(det.class_id),
+            img,
+            emb_session,
+            thresholds,
+        )
+        .await?;
+        buckets.push(bucket);
+    }
+    Ok(buckets)
+}
+
+/// Helper: run DINOv2-small over a 224x224 letterbox of `bbox`, write a
+/// `detections` row + `recognition_items` row, and return the recall bucket.
+///
+/// Used by the YOLOv8 per-detection branch and by the no-detection fallback
+/// of [`run_tool_pipeline`].
+#[allow(clippy::too_many_arguments)]
+async fn embed_and_persist_object(
+    state: &AppState,
+    job: &Job,
+    project_id: Uuid,
+    bbox: (f32, f32, f32, f32),
+    det_score: f32,
+    source: &str,
+    class_id: Option<usize>,
+    img: &image::DynamicImage,
+    emb_session: &ort::session::Session,
+    thresholds: Thresholds,
+) -> Result<recall::Bucket> {
+    let pool = &state.db;
+
+    // 224x224 DINOv2 input + ImageNet mean/std over the bbox crop.
+    let nchw = preprocess::crop_to_nchw(img, bbox, 224, preprocess::Norm::ImageNet);
     let dims = nchw.shape().to_vec();
     let data: Vec<f32> = nchw.iter().copied().collect();
     let pixel_values = ort::value::Tensor::from_array((dims, data))?;
-    let outputs = session.run(ort::inputs![pixel_values]?)?;
+    let outputs = emb_session.run(ort::inputs![pixel_values]?)?;
 
-    // DINOv2-small output: shape (B=1, 257, 384). Token 0 is the CLS embedding.
+    // DINOv2-small output: (B=1, 257, 384). Token 0 = CLS embedding.
     let raw_view = outputs["last_hidden_state"].try_extract_tensor::<f32>()?;
     let shape = raw_view.shape().to_vec();
-    if shape.len() != 3 || shape[2] == 0 || shape[1] == 0 {
+    if shape.len() != 3 || shape[1] == 0 || shape[2] == 0 {
         return Err(anyhow!(
             "DINOv2 output has unexpected shape {:?}; expected (B, T, D)",
             shape
@@ -596,13 +715,17 @@ async fn run_tool_pipeline(
     recall::l2_normalize(&mut emb);
     let emb_512 = recall::pad_to_512(&emb);
 
-    let bbox = serde_json::json!({
-        "x1": 0,
-        "y1": 0,
-        "x2": src_w,
-        "y2": src_h,
-        "source": "dinov2_whole_image",
+    let mut bbox_json = serde_json::json!({
+        "x1": bbox.0,
+        "y1": bbox.1,
+        "x2": bbox.2,
+        "y2": bbox.3,
+        "source": source,
     });
+    if let Some(cid) = class_id {
+        bbox_json["class_id"] = serde_json::json!(cid);
+    }
+
     let v_pg = recall::encode_vector(&emb_512);
     let detection_id: i64 = sqlx::query_scalar(
         "INSERT INTO detections \
@@ -612,14 +735,13 @@ async fn run_tool_pipeline(
     )
     .bind(project_id)
     .bind(job.photo_id)
-    .bind(&bbox)
-    .bind(1.0_f32)
+    .bind(&bbox_json)
+    .bind(det_score)
     .bind(&v_pg)
     .fetch_one(pool)
     .await?;
 
     let hit = recall::top1_object(pool, &emb_512).await?;
-    let thresholds = Thresholds::DEFAULT;
     let (bucket, suggested_owner_type, suggested_owner_id, suggested_score) = match &hit {
         Some(h) => {
             let b = h.bucket(thresholds);
