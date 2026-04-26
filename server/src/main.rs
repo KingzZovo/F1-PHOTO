@@ -1,13 +1,15 @@
 use anyhow::{Result, bail};
+use chrono::{DateTime, Duration, NaiveDate, TimeZone, Utc};
 use clap::Parser;
 use std::sync::Arc;
+use uuid::Uuid;
 
 use f1_photo_server::{
     api,
     auth::{JwtCodec, jwt::DEFAULT_TTL_SECONDS, password},
-    cli::{Cli, Command, ModelsAction},
+    cli::{Cli, Command, FinetuneAction, ModelsAction},
     config::Config,
-    db, inference, logging, worker,
+    db, finetune, inference, logging, worker,
 };
 
 #[tokio::main]
@@ -25,6 +27,16 @@ async fn main() -> Result<()> {
         } => bootstrap_admin(cfg, &username, &password, full_name.as_deref()).await,
         Command::Models { action } => match action {
             ModelsAction::Check => models_check(cfg),
+        },
+        Command::Finetune { action } => match action {
+            FinetuneAction::Stats { since, project } => {
+                finetune_stats(cfg, since.as_deref(), project.as_deref()).await
+            }
+            FinetuneAction::Apply {
+                since,
+                project,
+                dry_run,
+            } => finetune_apply(cfg, since.as_deref(), project.as_deref(), dry_run).await,
         },
     }
 }
@@ -175,5 +187,88 @@ fn models_check(cfg: Config) -> Result<()> {
             println!("  ! error: {err}");
         }
     }
+    Ok(())
+}
+
+fn parse_since(s: Option<&str>) -> Result<DateTime<Utc>> {
+    match s {
+        None => Ok(Utc::now() - Duration::days(30)),
+        Some(raw) => {
+            // accept either YYYY-MM-DD or full RFC3339
+            if let Ok(dt) = DateTime::parse_from_rfc3339(raw) {
+                return Ok(dt.with_timezone(&Utc));
+            }
+            let d = NaiveDate::parse_from_str(raw, "%Y-%m-%d")
+                .map_err(|e| anyhow::anyhow!("invalid --since '{raw}': {e}"))?;
+            Ok(Utc.from_utc_datetime(&d.and_hms_opt(0, 0, 0).expect("midnight always valid")))
+        }
+    }
+}
+
+fn parse_project(s: Option<&str>) -> Result<Option<Uuid>> {
+    match s {
+        None => Ok(None),
+        Some(raw) => Uuid::parse_str(raw)
+            .map(Some)
+            .map_err(|e| anyhow::anyhow!("invalid --project UUID '{raw}': {e}")),
+    }
+}
+
+async fn finetune_stats(cfg: Config, since: Option<&str>, project: Option<&str>) -> Result<()> {
+    let pool = db::connect(&cfg).await?;
+    db::migrate(&pool).await?;
+    let since = parse_since(since)?;
+    let project = parse_project(project)?;
+    let s = finetune::stats(&pool, since, project).await?;
+    println!("since               : {}", s.since);
+    println!(
+        "project             : {}",
+        s.project.map(|u| u.to_string()).unwrap_or_else(|| "<all>".to_string())
+    );
+    println!("total_candidates    : {}", s.total_candidates);
+    println!("already_rolled_back : {}", s.already_rolled_back);
+    println!("pending             : {}", s.pending);
+    println!();
+    println!(
+        "{:<8}  {:<36}  {:>9}  {:>11}  {:>7}  {}",
+        "owner", "id", "candidate", "already", "pending", "latest_corrected_at"
+    );
+    println!("{}", "-".repeat(110));
+    for o in &s.owners {
+        println!(
+            "{:<8}  {:<36}  {:>9}  {:>11}  {:>7}  {}",
+            o.owner_type,
+            o.owner_id,
+            o.candidate_count,
+            o.already_rolled_back,
+            o.pending,
+            o.latest_corrected_at
+                .map(|d| d.to_rfc3339())
+                .unwrap_or_else(|| "-".to_string()),
+        );
+    }
+    Ok(())
+}
+
+async fn finetune_apply(
+    cfg: Config,
+    since: Option<&str>,
+    project: Option<&str>,
+    dry_run: bool,
+) -> Result<()> {
+    let pool = db::connect(&cfg).await?;
+    db::migrate(&pool).await?;
+    let since = parse_since(since)?;
+    let project = parse_project(project)?;
+    let r = finetune::apply(&pool, since, project, dry_run).await?;
+    println!("since                  : {}", r.since);
+    println!(
+        "project                : {}",
+        r.project.map(|u| u.to_string()).unwrap_or_else(|| "<all>".to_string())
+    );
+    println!("dry_run                : {}", r.dry_run);
+    println!("inserted               : {}", r.inserted);
+    println!("skipped_already_present: {}", r.skipped_already_present);
+    println!("skipped_no_embedding   : {}", r.skipped_no_embedding);
     Ok(())
 }

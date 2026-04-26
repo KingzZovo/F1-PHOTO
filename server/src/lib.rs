@@ -10,6 +10,7 @@ pub mod cli;
 pub mod config;
 pub mod db;
 pub mod error;
+pub mod finetune;
 pub mod inference;
 pub mod logging;
 pub mod worker;

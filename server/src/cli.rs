@@ -1,9 +1,9 @@
 //! CLI surface for the `f1photo` binary.
 //!
 //! Default subcommand is `serve` (running the HTTP server). Operational
-//! subcommands such as `bootstrap-admin` and `models check` are kept in the
-//! same binary so a single deployment artefact can both run and be
-//! administered.
+//! subcommands such as `bootstrap-admin`, `models check`, and `finetune`
+//! are kept in the same binary so a single deployment artefact can both
+//! run and be administered.
 
 use clap::{Parser, Subcommand};
 
@@ -42,6 +42,14 @@ pub enum Command {
         #[command(subcommand)]
         action: ModelsAction,
     },
+
+    /// Roll manually-corrected recognition samples back into
+    /// `identity_embeddings` so the recognition gallery learns from human
+    /// feedback. Designed to be run monthly via cron.
+    Finetune {
+        #[command(subcommand)]
+        action: FinetuneAction,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -50,4 +58,31 @@ pub enum ModelsAction {
     /// print a human-readable summary. Exits 0 even when ORT is not
     /// installed so it's safe to run on hosts without `libonnxruntime.so`.
     Check,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum FinetuneAction {
+    /// Print per-owner candidate stats without writing anything.
+    Stats {
+        /// Only consider corrections from this date onwards (YYYY-MM-DD).
+        /// Defaults to 30 days ago.
+        #[arg(long)]
+        since: Option<String>,
+        /// Restrict to a single project UUID. Defaults to all projects.
+        #[arg(long)]
+        project: Option<String>,
+    },
+    /// Roll eligible embeddings into `identity_embeddings` (idempotent).
+    Apply {
+        /// Only consider corrections from this date onwards (YYYY-MM-DD).
+        /// Defaults to 30 days ago.
+        #[arg(long)]
+        since: Option<String>,
+        /// Restrict to a single project UUID. Defaults to all projects.
+        #[arg(long)]
+        project: Option<String>,
+        /// Print what would be inserted but do not write.
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
