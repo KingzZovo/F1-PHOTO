@@ -5,6 +5,7 @@ pub mod health;
 pub mod persons;
 pub mod photos;
 pub mod projects;
+pub mod recognitions;
 pub mod settings;
 pub mod tools;
 pub mod work_orders;
@@ -114,6 +115,27 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/api/projects/:project_id/work_orders/:id/photos",
             get(photos::list_by_work_order),
+        )
+        // Recognition results (project-scoped): detections + recognition_items.
+        .route(
+            "/api/projects/:project_id/photos/:photo_id/detections",
+            get(recognitions::list_detections_for_photo),
+        )
+        .route(
+            "/api/projects/:project_id/photos/:photo_id/recognition_items",
+            get(recognitions::list_items_for_photo),
+        )
+        .route(
+            "/api/projects/:project_id/recognition_items",
+            get(recognitions::list_items),
+        )
+        .route(
+            "/api/projects/:project_id/recognition_items/:id",
+            get(recognitions::get_item),
+        )
+        .route(
+            "/api/projects/:project_id/recognition_items/:id/correct",
+            patch(recognitions::correct_item),
         )
         // Master data: persons.
         .route(
