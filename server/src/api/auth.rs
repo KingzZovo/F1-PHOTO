@@ -1,7 +1,7 @@
 use crate::api::AppState;
-use crate::auth::{CurrentUser, password};
+use crate::auth::{password, CurrentUser};
 use crate::error::{AppError, AppResult};
-use axum::{Json, extract::State, http::StatusCode};
+use axum::{extract::State, http::StatusCode, Json};
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;

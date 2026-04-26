@@ -28,14 +28,14 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use moka::future::Cache;
-use sqlx::{PgPool, Row, postgres::PgListener};
+use sqlx::{postgres::PgListener, PgPool, Row};
 use tokio::time::sleep;
 use uuid::Uuid;
 
 use crate::api::AppState;
-use crate::inference::{Thresholds, preprocess, recall};
+use crate::inference::{preprocess, recall, Thresholds};
 
 /// After this many failed attempts the photo is marked `failed` and the queue
 /// row is removed.
@@ -141,25 +141,20 @@ async fn run(state: &AppState, _caches: &WorkerCaches) -> Result<()> {
 
     loop {
         // Drain anything currently due.
-        loop {
-            match claim_one(&pool).await? {
-                Some(job) => {
-                    let job_id = job.id;
-                    let photo_id = job.photo_id;
-                    if let Err(e) = process_job(state, &job).await {
-                        tracing::warn!(
-                            job_id,
-                            %photo_id,
-                            attempts = job.attempts,
-                            error = ?e,
-                            "process_job failed"
-                        );
-                        if let Err(e2) = record_failure(&pool, &job, &format!("{e:#}")).await {
-                            tracing::error!(error = ?e2, job_id, "record_failure also failed");
-                        }
-                    }
+        while let Some(job) = claim_one(&pool).await? {
+            let job_id = job.id;
+            let photo_id = job.photo_id;
+            if let Err(e) = process_job(state, &job).await {
+                tracing::warn!(
+                    job_id,
+                    %photo_id,
+                    attempts = job.attempts,
+                    error = ?e,
+                    "process_job failed"
+                );
+                if let Err(e2) = record_failure(&pool, &job, &format!("{e:#}")).await {
+                    tracing::error!(error = ?e2, job_id, "record_failure also failed");
                 }
-                None => break,
             }
         }
 
@@ -320,7 +315,7 @@ async fn record_failure(pool: &PgPool, job: &Job, msg: &str) -> Result<()> {
         return Ok(());
     }
 
-    let backoff_secs: i32 = 5 * (job.attempts as i32).pow(2).max(1);
+    let backoff_secs: i32 = 5 * job.attempts.pow(2).max(1);
     sqlx::query(
         "UPDATE recognition_queue \
          SET locked_until = now() + ($1::int || ' seconds')::interval, \

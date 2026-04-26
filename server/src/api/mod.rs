@@ -15,9 +15,9 @@ use crate::config::Config;
 use crate::inference::ModelRegistry;
 use crate::static_assets;
 use axum::{
-    Router,
     extract::DefaultBodyLimit,
     routing::{get, patch, post},
+    Router,
 };
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -74,10 +74,7 @@ pub fn router(state: AppState) -> Router {
                 .patch(projects::patch_project)
                 .delete(projects::archive_project),
         )
-        .route(
-            "/api/projects/:project_id/me",
-            get(projects::get_my_perms),
-        )
+        .route("/api/projects/:project_id/me", get(projects::get_my_perms))
         .route(
             "/api/projects/:project_id/unarchive",
             post(projects::unarchive_project),
@@ -110,7 +107,9 @@ pub fn router(state: AppState) -> Router {
         // handler can enforce settings.upload.max_mb dynamically.
         .route(
             "/api/projects/:project_id/photos",
-            get(photos::list).post(photos::upload).layer(DefaultBodyLimit::disable()),
+            get(photos::list)
+                .post(photos::upload)
+                .layer(DefaultBodyLimit::disable()),
         )
         .route(
             "/api/projects/:project_id/photos/:id",
@@ -144,59 +143,35 @@ pub fn router(state: AppState) -> Router {
             patch(recognitions::correct_item),
         )
         // Master data: persons.
-        .route(
-            "/api/persons",
-            get(persons::list).post(persons::create),
-        )
+        .route("/api/persons", get(persons::list).post(persons::create))
         .route(
             "/api/persons/:id",
             get(persons::get_one)
                 .patch(persons::patch)
                 .delete(persons::soft_delete),
         )
-        .route(
-            "/api/persons/:id/restore",
-            post(persons::restore),
-        )
+        .route("/api/persons/:id/restore", post(persons::restore))
         // Master data: tools.
-        .route(
-            "/api/tools",
-            get(tools::list).post(tools::create),
-        )
+        .route("/api/tools", get(tools::list).post(tools::create))
         .route(
             "/api/tools/:id",
             get(tools::get_one)
                 .patch(tools::patch)
                 .delete(tools::soft_delete),
         )
-        .route(
-            "/api/tools/:id/restore",
-            post(tools::restore),
-        )
+        .route("/api/tools/:id/restore", post(tools::restore))
         // Master data: devices.
-        .route(
-            "/api/devices",
-            get(devices::list).post(devices::create),
-        )
+        .route("/api/devices", get(devices::list).post(devices::create))
         .route(
             "/api/devices/:id",
             get(devices::get_one)
                 .patch(devices::patch)
                 .delete(devices::soft_delete),
         )
-        .route(
-            "/api/devices/:id/restore",
-            post(devices::restore),
-        )
+        .route("/api/devices/:id/restore", post(devices::restore))
         // Admin diagnostics.
-        .route(
-            "/api/admin/queue/stats",
-            get(admin::queue_stats),
-        )
-        .route(
-            "/api/admin/models",
-            get(admin::list_models),
-        )
+        .route("/api/admin/queue/stats", get(admin::queue_stats))
+        .route("/api/admin/models", get(admin::list_models))
         // Platform settings.
         .route(
             "/api/settings",

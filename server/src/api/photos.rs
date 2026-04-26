@@ -26,15 +26,15 @@
 //!   sn (optional, when owner_type=tool|device)
 //!   angle (optional: front|side|back|unknown, default unknown)
 
-use crate::api::{AppState, is_unique_violation};
+use crate::api::{is_unique_violation, AppState};
 use crate::audit::Audit;
 use crate::auth::{DeletePerm, RequireProjectPerm, UploadPerm, ViewPerm};
 use crate::error::{AppError, AppResult};
 use axum::{
-    Json,
     extract::{Multipart, Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
+    Json,
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -62,9 +62,7 @@ fn validate_owner_type(s: &str) -> AppResult<&'static str> {
             return Ok(v);
         }
     }
-    Err(AppError::InvalidInput(format!(
-        "invalid owner_type: {s}"
-    )))
+    Err(AppError::InvalidInput(format!("invalid owner_type: {s}")))
 }
 
 fn validate_angle(s: &str) -> AppResult<&'static str> {
@@ -124,8 +122,7 @@ fn row_to_dto(row: &sqlx::postgres::PgRow) -> PhotoDto {
     }
 }
 
-const SELECT_COLS: &str =
-    "id, project_id, work_order_id, owner_type::text, owner_id, hash, path, \
+const SELECT_COLS: &str = "id, project_id, work_order_id, owner_type::text, owner_id, hash, path, \
      angle::text, width, height, bytes, status::text, uploaded_by, created_at, updated_at";
 
 #[derive(Serialize)]
@@ -150,11 +147,10 @@ async fn read_max_upload_mb(pool: &sqlx::PgPool) -> AppResult<i64> {
 }
 
 async fn read_allow_auto_create_person(pool: &sqlx::PgPool) -> AppResult<bool> {
-    let row: Option<(serde_json::Value,)> = sqlx::query_as(
-        "SELECT value FROM settings WHERE key = 'upload.allow_auto_create_person'",
-    )
-    .fetch_optional(pool)
-    .await?;
+    let row: Option<(serde_json::Value,)> =
+        sqlx::query_as("SELECT value FROM settings WHERE key = 'upload.allow_auto_create_person'")
+            .fetch_optional(pool)
+            .await?;
     Ok(row.and_then(|(v,)| v.as_bool()).unwrap_or(false))
 }
 
@@ -241,8 +237,7 @@ pub async fn upload(
         }
     }
 
-    let file_bytes =
-        file_bytes.ok_or_else(|| AppError::InvalidInput("file is required".into()))?;
+    let file_bytes = file_bytes.ok_or_else(|| AppError::InvalidInput("file is required".into()))?;
     if file_bytes.is_empty() {
         return Err(AppError::InvalidInput("file is empty".into()));
     }
@@ -258,45 +253,39 @@ pub async fn upload(
     };
 
     // Resolve work_order_id (optional; one of wo_id/wo_code may be supplied).
-    let work_order_id: Option<Uuid> =
-        match (field_wo_id.as_deref(), field_wo_code.as_deref()) {
-            (Some(s), _) if !s.is_empty() => {
-                let wo_id = Uuid::parse_str(s).map_err(|_| {
-                    AppError::InvalidInput("wo_id is not a valid uuid".into())
-                })?;
-                let exists: Option<(Uuid,)> = sqlx::query_as(
-                    "SELECT id FROM work_orders WHERE id = $1 AND project_id = $2",
-                )
-                .bind(wo_id)
-                .bind(project_id)
-                .fetch_optional(&state.db)
-                .await?;
-                if exists.is_none() {
-                    return Err(AppError::NotFound(
-                        "work order not found in project".into(),
-                    ));
-                }
-                Some(wo_id)
+    let work_order_id: Option<Uuid> = match (field_wo_id.as_deref(), field_wo_code.as_deref()) {
+        (Some(s), _) if !s.is_empty() => {
+            let wo_id = Uuid::parse_str(s)
+                .map_err(|_| AppError::InvalidInput("wo_id is not a valid uuid".into()))?;
+            let exists: Option<(Uuid,)> =
+                sqlx::query_as("SELECT id FROM work_orders WHERE id = $1 AND project_id = $2")
+                    .bind(wo_id)
+                    .bind(project_id)
+                    .fetch_optional(&state.db)
+                    .await?;
+            if exists.is_none() {
+                return Err(AppError::NotFound("work order not found in project".into()));
             }
-            (None, Some(code)) if !code.is_empty() => {
-                let row: Option<(Uuid,)> = sqlx::query_as(
-                    "SELECT id FROM work_orders WHERE project_id = $1 AND code = $2",
-                )
-                .bind(project_id)
-                .bind(code)
-                .fetch_optional(&state.db)
-                .await?;
-                match row {
-                    Some((id,)) => Some(id),
-                    None => {
-                        return Err(AppError::NotFound(format!(
-                            "work order not found: code={code}"
-                        )));
-                    }
+            Some(wo_id)
+        }
+        (None, Some(code)) if !code.is_empty() => {
+            let row: Option<(Uuid,)> =
+                sqlx::query_as("SELECT id FROM work_orders WHERE project_id = $1 AND code = $2")
+                    .bind(project_id)
+                    .bind(code)
+                    .fetch_optional(&state.db)
+                    .await?;
+            match row {
+                Some((id,)) => Some(id),
+                None => {
+                    return Err(AppError::NotFound(format!(
+                        "work order not found: code={code}"
+                    )));
                 }
             }
-            _ => None,
-        };
+        }
+        _ => None,
+    };
 
     // Resolve owner_id.
     let mut owner_id: Option<Uuid> = match field_owner_id.as_deref() {
@@ -331,7 +320,7 @@ pub async fn upload(
                                 owner_id = Some(row.0);
                                 Audit::new("person.auto_create", "person")
                                     .actor(actor)
-                                    .target(&row.0.to_string())
+                                    .target(row.0.to_string())
                                     .after(json!({"employee_no": no, "source": "photo_upload"}))
                                     .write(&state.db)
                                     .await;
@@ -346,12 +335,11 @@ pub async fn upload(
             }
             "tool" => {
                 if let Some(sn) = field_sn.as_deref().filter(|s| !s.is_empty()) {
-                    let row: Option<(Uuid,)> = sqlx::query_as(
-                        "SELECT id FROM tools WHERE sn = $1 AND deleted_at IS NULL",
-                    )
-                    .bind(sn)
-                    .fetch_optional(&state.db)
-                    .await?;
+                    let row: Option<(Uuid,)> =
+                        sqlx::query_as("SELECT id FROM tools WHERE sn = $1 AND deleted_at IS NULL")
+                            .bind(sn)
+                            .fetch_optional(&state.db)
+                            .await?;
                     match row {
                         Some((id,)) => owner_id = Some(id),
                         None => {
@@ -391,13 +379,12 @@ pub async fn upload(
 
     // Dedupe pre-check: if the same (project_id, hash) already exists, return
     // the existing photo_id with deduped:true and skip file write + enqueue.
-    let existing: Option<(Uuid, String)> = sqlx::query_as(
-        "SELECT id, status::text FROM photos WHERE project_id = $1 AND hash = $2",
-    )
-    .bind(project_id)
-    .bind(&hash)
-    .fetch_optional(&state.db)
-    .await?;
+    let existing: Option<(Uuid, String)> =
+        sqlx::query_as("SELECT id, status::text FROM photos WHERE project_id = $1 AND hash = $2")
+            .bind(project_id)
+            .bind(&hash)
+            .fetch_optional(&state.db)
+            .await?;
     if let Some((eid, estatus)) = existing {
         return Ok((
             StatusCode::ACCEPTED,
@@ -497,7 +484,7 @@ pub async fn upload(
     Audit::new("photo.upload", "photo")
         .actor(actor)
         .project(project_id)
-        .target(&id.to_string())
+        .target(id.to_string())
         .after(json!({
             "hash": hash,
             "path": rel,
@@ -798,7 +785,7 @@ pub async fn patch(
     Audit::new("photo.update", "photo")
         .actor(actor)
         .project(project_id)
-        .target(&id.to_string())
+        .target(id.to_string())
         .before(json!({
             "owner_type": b_owner_type,
             "owner_id": b_owner_id,
@@ -815,7 +802,6 @@ pub async fn patch(
     Ok(Json(dto))
 }
 
-
 // ---------------------------------------------------------------------------
 // DELETE
 // ---------------------------------------------------------------------------
@@ -828,13 +814,12 @@ pub async fn delete_one(
     let access = perm.into_access();
     let actor = access.user.id;
 
-    let before: Option<(String, String)> = sqlx::query_as(
-        "SELECT path, hash FROM photos WHERE id = $1 AND project_id = $2",
-    )
-    .bind(id)
-    .bind(project_id)
-    .fetch_optional(&state.db)
-    .await?;
+    let before: Option<(String, String)> =
+        sqlx::query_as("SELECT path, hash FROM photos WHERE id = $1 AND project_id = $2")
+            .bind(id)
+            .bind(project_id)
+            .fetch_optional(&state.db)
+            .await?;
     let (path_rel, hash) =
         before.ok_or_else(|| AppError::NotFound(format!("photo not found: {id}")))?;
 
@@ -854,7 +839,7 @@ pub async fn delete_one(
     Audit::new("photo.delete", "photo")
         .actor(actor)
         .project(project_id)
-        .target(&id.to_string())
+        .target(id.to_string())
         .before(json!({"hash": hash, "path": path_rel}))
         .write(&state.db)
         .await;

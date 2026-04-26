@@ -1,7 +1,7 @@
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use argon2::{
+    password_hash::{rand_core::OsRng, PasswordHash, SaltString},
     Argon2, PasswordHasher, PasswordVerifier,
-    password_hash::{PasswordHash, SaltString, rand_core::OsRng},
 };
 
 /// Hash a password using argon2id with a fresh random salt.

@@ -6,14 +6,14 @@
 //! marker; deleted rows are hidden from list/get unless an admin explicitly
 //! sets `?include_deleted=1`.
 
-use crate::api::{AppState, is_unique_violation};
+use crate::api::{is_unique_violation, AppState};
 use crate::audit::Audit;
 use crate::auth::{CurrentUser, RequireAdmin};
 use crate::error::{AppError, AppResult};
 use axum::{
-    Json,
     extract::{Path, Query, State},
     http::StatusCode,
+    Json,
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -223,9 +223,7 @@ pub async fn create(
     .await
     .map_err(|e| {
         if is_unique_violation(&e) {
-            AppError::Conflict(format!(
-                "employee_no '{employee_no}' already exists"
-            ))
+            AppError::Conflict(format!("employee_no '{employee_no}' already exists"))
         } else {
             AppError::Db(e)
         }
@@ -301,15 +299,11 @@ pub async fn patch(
         None => before.name.clone(),
     };
     let department = match input.department {
-        Some(opt) => opt
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty()),
+        Some(opt) => opt.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()),
         None => before.department.clone(),
     };
     let phone = match input.phone {
-        Some(opt) => opt
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty()),
+        Some(opt) => opt.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()),
         None => before.phone.clone(),
     };
 
@@ -327,9 +321,7 @@ pub async fn patch(
     .await
     .map_err(|e| {
         if is_unique_violation(&e) {
-            AppError::Conflict(format!(
-                "employee_no '{employee_no}' already exists"
-            ))
+            AppError::Conflict(format!("employee_no '{employee_no}' already exists"))
         } else {
             AppError::Db(e)
         }
@@ -376,12 +368,11 @@ pub async fn soft_delete(
     .fetch_optional(&s.db)
     .await?;
     if row.is_none() {
-        let exists: Option<(bool,)> = sqlx::query_as(
-            "SELECT (deleted_at IS NOT NULL) FROM persons WHERE id=$1",
-        )
-        .bind(id)
-        .fetch_optional(&s.db)
-        .await?;
+        let exists: Option<(bool,)> =
+            sqlx::query_as("SELECT (deleted_at IS NOT NULL) FROM persons WHERE id=$1")
+                .bind(id)
+                .fetch_optional(&s.db)
+                .await?;
         return match exists {
             None => Err(AppError::NotFound("person".into())),
             Some((true,)) => Err(AppError::Conflict("person already deleted".into())),
@@ -416,12 +407,11 @@ pub async fn restore(
     .fetch_optional(&s.db)
     .await?;
     if row.is_none() {
-        let exists: Option<(bool,)> = sqlx::query_as(
-            "SELECT (deleted_at IS NOT NULL) FROM persons WHERE id=$1",
-        )
-        .bind(id)
-        .fetch_optional(&s.db)
-        .await?;
+        let exists: Option<(bool,)> =
+            sqlx::query_as("SELECT (deleted_at IS NOT NULL) FROM persons WHERE id=$1")
+                .bind(id)
+                .fetch_optional(&s.db)
+                .await?;
         return match exists {
             None => Err(AppError::NotFound("person".into())),
             Some((false,)) => Err(AppError::Conflict("person is not deleted".into())),

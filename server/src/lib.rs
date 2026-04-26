@@ -3,6 +3,8 @@
 //! `main.rs` is a thin binary that wires `Config` -> `db::connect` -> `db::migrate`
 //! -> `api::router`. All real logic lives here so unit tests can exercise it.
 
+#![allow(clippy::type_complexity)]
+
 pub mod api;
 pub mod audit;
 pub mod auth;

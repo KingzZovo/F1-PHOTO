@@ -3,9 +3,9 @@ use crate::audit::Audit;
 use crate::auth::{CurrentUser, ManagePerm, RequireAdmin, RequireProjectPerm, ViewPerm};
 use crate::error::{AppError, AppResult};
 use axum::{
-    Json,
     extract::{Path, Query, State},
     http::StatusCode,
+    Json,
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -146,16 +146,19 @@ pub async fn create_project(
         return Err(AppError::InvalidInput("code/name too long".into()));
     }
 
-    let row: Result<(
-        Uuid,
-        String,
-        String,
-        Option<String>,
-        Option<String>,
-        Option<DateTime<Utc>>,
-        DateTime<Utc>,
-        DateTime<Utc>,
-    ), sqlx::Error> = sqlx::query_as(
+    let row: Result<
+        (
+            Uuid,
+            String,
+            String,
+            Option<String>,
+            Option<String>,
+            Option<DateTime<Utc>>,
+            DateTime<Utc>,
+            DateTime<Utc>,
+        ),
+        sqlx::Error,
+    > = sqlx::query_as(
         "INSERT INTO projects (code, name, icon, description, created_by) \
          VALUES ($1, $2, $3, $4, $5) \
          RETURNING id, code, name, icon, description, archived_at, created_at, updated_at",
@@ -210,9 +213,7 @@ pub async fn get_project(
 ///
 /// Useful for the frontend to know what buttons to render. Returns the
 /// caller's effective permissions on this project.
-pub async fn get_my_perms(
-    perm: RequireProjectPerm<ViewPerm>,
-) -> Json<MyPermsDto> {
+pub async fn get_my_perms(perm: RequireProjectPerm<ViewPerm>) -> Json<MyPermsDto> {
     let a = perm.access;
     Json(MyPermsDto {
         is_admin: a.is_admin,
@@ -270,7 +271,9 @@ pub async fn patch_project(
         .actor(perm.access.user.id)
         .project(pid)
         .target(pid.to_string())
-        .before(json!({"name": before.name, "icon": before.icon, "description": before.description}))
+        .before(
+            json!({"name": before.name, "icon": before.icon, "description": before.description}),
+        )
         .after(json!({"name": after.name, "icon": after.icon, "description": after.description}))
         .write(&s.db)
         .await;
@@ -543,17 +546,26 @@ pub async fn patch_member(
         .await;
 
     // Re-fetch with user info for the response.
-    let row: (Uuid, String, Option<String>, String, bool, bool, bool, bool, DateTime<Utc>) =
-        sqlx::query_as(
-            "SELECT m.user_id, u.username, u.full_name, u.role::text, \
+    let row: (
+        Uuid,
+        String,
+        Option<String>,
+        String,
+        bool,
+        bool,
+        bool,
+        bool,
+        DateTime<Utc>,
+    ) = sqlx::query_as(
+        "SELECT m.user_id, u.username, u.full_name, u.role::text, \
                     m.can_view, m.can_upload, m.can_delete, m.can_manage, m.created_at \
              FROM project_members m JOIN users u ON u.id = m.user_id \
              WHERE m.project_id=$1 AND m.user_id=$2",
-        )
-        .bind(project_id)
-        .bind(user_id)
-        .fetch_one(&s.db)
-        .await?;
+    )
+    .bind(project_id)
+    .bind(user_id)
+    .fetch_one(&s.db)
+    .await?;
 
     Ok(Json(MemberDto {
         user_id: row.0,
@@ -643,4 +655,3 @@ fn is_unique_violation(e: &sqlx::Error) -> bool {
         false
     }
 }
-

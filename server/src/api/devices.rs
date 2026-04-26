@@ -3,14 +3,14 @@
 //! Same shape as `tools` but with a `model` field instead of `category`.
 //! See `persons.rs` for the soft-delete + admin-only-write conventions.
 
-use crate::api::{AppState, is_unique_violation};
+use crate::api::{is_unique_violation, AppState};
 use crate::audit::Audit;
 use crate::auth::{CurrentUser, RequireAdmin};
 use crate::error::{AppError, AppResult};
 use axum::{
-    Json,
     extract::{Path, Query, State},
     http::StatusCode,
+    Json,
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -156,9 +156,7 @@ pub async fn create(
     let sn = input.sn.trim().to_string();
     let name = input.name.trim().to_string();
     if sn.is_empty() || name.is_empty() {
-        return Err(AppError::InvalidInput(
-            "sn and name are required".into(),
-        ));
+        return Err(AppError::InvalidInput("sn and name are required".into()));
     }
     if sn.len() > 64 {
         return Err(AppError::InvalidInput("sn too long".into()));
@@ -251,28 +249,24 @@ pub async fn patch(
         None => before.name.clone(),
     };
     let model = match input.model {
-        Some(opt) => opt
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty()),
+        Some(opt) => opt.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()),
         None => before.model.clone(),
     };
 
-    sqlx::query(
-        "UPDATE devices SET sn=$1, name=$2, model=$3, updated_at=now() WHERE id=$4",
-    )
-    .bind(&sn)
-    .bind(&name)
-    .bind(model.as_deref())
-    .bind(id)
-    .execute(&s.db)
-    .await
-    .map_err(|e| {
-        if is_unique_violation(&e) {
-            AppError::Conflict(format!("sn '{sn}' already exists"))
-        } else {
-            AppError::Db(e)
-        }
-    })?;
+    sqlx::query("UPDATE devices SET sn=$1, name=$2, model=$3, updated_at=now() WHERE id=$4")
+        .bind(&sn)
+        .bind(&name)
+        .bind(model.as_deref())
+        .bind(id)
+        .execute(&s.db)
+        .await
+        .map_err(|e| {
+            if is_unique_violation(&e) {
+                AppError::Conflict(format!("sn '{sn}' already exists"))
+            } else {
+                AppError::Db(e)
+            }
+        })?;
 
     let after = load_dto(&s, id).await?;
 
@@ -308,12 +302,11 @@ pub async fn soft_delete(
     .fetch_optional(&s.db)
     .await?;
     if row.is_none() {
-        let exists: Option<(bool,)> = sqlx::query_as(
-            "SELECT (deleted_at IS NOT NULL) FROM devices WHERE id=$1",
-        )
-        .bind(id)
-        .fetch_optional(&s.db)
-        .await?;
+        let exists: Option<(bool,)> =
+            sqlx::query_as("SELECT (deleted_at IS NOT NULL) FROM devices WHERE id=$1")
+                .bind(id)
+                .fetch_optional(&s.db)
+                .await?;
         return match exists {
             None => Err(AppError::NotFound("device".into())),
             Some((true,)) => Err(AppError::Conflict("device already deleted".into())),
@@ -343,12 +336,11 @@ pub async fn restore(
     .fetch_optional(&s.db)
     .await?;
     if row.is_none() {
-        let exists: Option<(bool,)> = sqlx::query_as(
-            "SELECT (deleted_at IS NOT NULL) FROM devices WHERE id=$1",
-        )
-        .bind(id)
-        .fetch_optional(&s.db)
-        .await?;
+        let exists: Option<(bool,)> =
+            sqlx::query_as("SELECT (deleted_at IS NOT NULL) FROM devices WHERE id=$1")
+                .bind(id)
+                .fetch_optional(&s.db)
+                .await?;
         return match exists {
             None => Err(AppError::NotFound("device".into())),
             Some((false,)) => Err(AppError::Conflict("device is not deleted".into())),

@@ -9,7 +9,7 @@
 
 use std::path::{Path, PathBuf};
 
-use ort::session::{Session, builder::GraphOptimizationLevel};
+use ort::session::{builder::GraphOptimizationLevel, Session};
 
 use anyhow::Result;
 use serde::Serialize;
@@ -229,11 +229,7 @@ impl ModelRegistry {
 
     /// `true` when every required (non-optional) model loaded successfully.
     pub fn ready(&self) -> bool {
-        self.ort_available
-            && self
-                .models
-                .iter()
-                .all(|m| m.info.optional || m.info.loaded)
+        self.ort_available && self.models.iter().all(|m| m.info.optional || m.info.loaded)
     }
 
     pub fn status(&self) -> ModelRegistryStatus {

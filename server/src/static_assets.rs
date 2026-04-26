@@ -12,13 +12,13 @@
 //! `vite dev`.
 
 use axum::{
-    Router,
     body::Body,
     extract::Request,
-    http::{HeaderValue, StatusCode, header},
+    http::{header, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
+    Router,
 };
-use include_dir::{Dir, File, include_dir};
+use include_dir::{include_dir, Dir, File};
 
 static WEB_DIST: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../web/dist");
 

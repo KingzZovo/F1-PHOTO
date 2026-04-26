@@ -1,4 +1,4 @@
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use chrono::{DateTime, Duration, NaiveDate, TimeZone, Utc};
 use clap::Parser;
 use std::sync::Arc;
@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use f1_photo_server::{
     api,
-    auth::{JwtCodec, jwt::DEFAULT_TTL_SECONDS, password},
+    auth::{jwt::DEFAULT_TTL_SECONDS, password, JwtCodec},
     bundled_pg::BundledPg,
     cli::{Cli, Command, FinetuneAction, ModelsAction},
     config::Config,
@@ -74,10 +74,8 @@ async fn serve(cfg: Config, bundled: Option<BundledPg>) -> Result<()> {
     // worker can both observe a stable snapshot. Loading is best-effort:
     // missing libonnxruntime / model files are reflected in the status
     // and inference is left disabled.
-    let registry = inference::ModelRegistry::load(
-        cfg.models_dir.clone(),
-        cfg.inference_intra_threads,
-    );
+    let registry =
+        inference::ModelRegistry::load(cfg.models_dir.clone(), cfg.inference_intra_threads);
     let status = registry.status();
     let loaded_count = status.models.iter().filter(|m| m.loaded).count();
     let missing_required: Vec<&str> = status
@@ -175,10 +173,8 @@ async fn bootstrap_admin(
 /// human-readable summary. Always exits 0 (even when ORT is missing) so it
 /// can be safely wired into ops smoke checks.
 fn models_check(cfg: Config) -> Result<()> {
-    let registry = inference::ModelRegistry::load(
-        cfg.models_dir.clone(),
-        cfg.inference_intra_threads,
-    );
+    let registry =
+        inference::ModelRegistry::load(cfg.models_dir.clone(), cfg.inference_intra_threads);
     let status = registry.status();
 
     println!("models_dir       : {}", status.models_dir);
@@ -194,8 +190,8 @@ fn models_check(cfg: Config) -> Result<()> {
     println!("ready            : {}", status.ready);
     println!();
     println!(
-        "{:<14}  {:<28}  {:<8}  {:<8}  {:<10}  {}",
-        "kind", "file", "present", "loaded", "optional", "bytes"
+        "{:<14}  {:<28}  {:<8}  {:<8}  {:<10}  bytes",
+        "kind", "file", "present", "loaded", "optional"
     );
     println!("{}", "-".repeat(96));
     for m in &status.models {
@@ -206,12 +202,7 @@ fn models_check(cfg: Config) -> Result<()> {
             .unwrap_or_else(|| "-".to_string());
         println!(
             "{:<14}  {:<28}  {:<8}  {:<8}  {:<10}  {}",
-            kind,
-            m.file_name,
-            m.file_present,
-            m.loaded,
-            m.optional,
-            bytes,
+            kind, m.file_name, m.file_present, m.loaded, m.optional, bytes,
         );
         if let Some(err) = &m.error {
             println!("  ! error: {err}");
@@ -253,15 +244,17 @@ async fn finetune_stats(cfg: Config, since: Option<&str>, project: Option<&str>)
     println!("since               : {}", s.since);
     println!(
         "project             : {}",
-        s.project.map(|u| u.to_string()).unwrap_or_else(|| "<all>".to_string())
+        s.project
+            .map(|u| u.to_string())
+            .unwrap_or_else(|| "<all>".to_string())
     );
     println!("total_candidates    : {}", s.total_candidates);
     println!("already_rolled_back : {}", s.already_rolled_back);
     println!("pending             : {}", s.pending);
     println!();
     println!(
-        "{:<8}  {:<36}  {:>9}  {:>11}  {:>7}  {}",
-        "owner", "id", "candidate", "already", "pending", "latest_corrected_at"
+        "{:<8}  {:<36}  {:>9}  {:>11}  {:>7}  latest_corrected_at",
+        "owner", "id", "candidate", "already", "pending"
     );
     println!("{}", "-".repeat(110));
     for o in &s.owners {
@@ -294,7 +287,9 @@ async fn finetune_apply(
     println!("since                  : {}", r.since);
     println!(
         "project                : {}",
-        r.project.map(|u| u.to_string()).unwrap_or_else(|| "<all>".to_string())
+        r.project
+            .map(|u| u.to_string())
+            .unwrap_or_else(|| "<all>".to_string())
     );
     println!("dry_run                : {}", r.dry_run);
     println!("inserted               : {}", r.inserted);

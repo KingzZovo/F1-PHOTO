@@ -1,4 +1,4 @@
-use tracing_subscriber::{EnvFilter, fmt, prelude::*};
+use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 /// Initialise tracing subscriber. Reads filter from `F1P_LOG` env (falls back
 /// to `info,sqlx=warn,hyper=warn,tower_http=info`).

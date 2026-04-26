@@ -7,7 +7,7 @@
 //! - GET /api/admin/models: snapshot of the loaded ONNX model registry
 //!   (which slots are filled, which files / libraries are missing).
 
-use axum::{Json, extract::State, http::StatusCode};
+use axum::{extract::State, http::StatusCode, Json};
 use serde::Serialize;
 use sqlx::Row;
 

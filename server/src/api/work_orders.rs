@@ -15,14 +15,14 @@
 //!   GET     view    POST    upload    PATCH   upload
 //!   DELETE  delete  POST    upload (transition)
 
-use crate::api::{AppState, is_unique_violation};
+use crate::api::{is_unique_violation, AppState};
 use crate::audit::Audit;
 use crate::auth::{DeletePerm, RequireProjectPerm, UploadPerm, ViewPerm};
 use crate::error::{AppError, AppResult};
 use axum::{
-    Json,
     extract::{Path, Query, State},
     http::StatusCode,
+    Json,
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -273,7 +273,9 @@ pub async fn create(
     .await
     .map_err(|e| {
         if is_unique_violation(&e) {
-            AppError::Conflict(format!("work order code '{code}' already exists in project"))
+            AppError::Conflict(format!(
+                "work order code '{code}' already exists in project"
+            ))
         } else {
             AppError::Db(e)
         }
@@ -373,7 +375,9 @@ pub async fn patch(
     .await
     .map_err(|e| {
         if is_unique_violation(&e) {
-            AppError::Conflict(format!("work order code '{code}' already exists in project"))
+            AppError::Conflict(format!(
+                "work order code '{code}' already exists in project"
+            ))
         } else {
             AppError::Db(e)
         }

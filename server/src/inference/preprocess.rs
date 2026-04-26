@@ -15,7 +15,7 @@
 //! reference Python implementations.
 
 use anyhow::Result;
-use image::{DynamicImage, GenericImageView, RgbImage, imageops::FilterType};
+use image::{imageops::FilterType, DynamicImage, GenericImageView, RgbImage};
 use ndarray::Array4;
 
 /// Normalization preset.
@@ -45,7 +45,15 @@ pub struct Letterbox {
 impl Letterbox {
     /// Map a detection bbox in the model's coordinate space back to the
     /// original image. Returns `(x1, y1, x2, y2)` clamped to `[0, src_w/h]`.
-    pub fn unproject(&self, bx1: f32, by1: f32, bx2: f32, by2: f32, src_w: u32, src_h: u32) -> (f32, f32, f32, f32) {
+    pub fn unproject(
+        &self,
+        bx1: f32,
+        by1: f32,
+        bx2: f32,
+        by2: f32,
+        src_w: u32,
+        src_h: u32,
+    ) -> (f32, f32, f32, f32) {
         let s = self.scale.max(1e-6);
         let x1 = (bx1 - self.pad_x as f32) / s;
         let y1 = (by1 - self.pad_y as f32) / s;
@@ -77,15 +85,16 @@ pub fn letterbox(src: &DynamicImage, dst: u32) -> (RgbImage, Letterbox) {
     let pad_x = (dst - nw) / 2;
     let pad_y = (dst - nh) / 2;
     let mut canvas = RgbImage::from_pixel(dst, dst, image::Rgb([114, 114, 114]));
-    image::imageops::overlay(
-        &mut canvas,
-        &resized,
-        pad_x as i64,
-        pad_y as i64,
-    );
+    image::imageops::overlay(&mut canvas, &resized, pad_x as i64, pad_y as i64);
     (
         canvas,
-        Letterbox { scale, pad_x, pad_y, out_w: dst, out_h: dst },
+        Letterbox {
+            scale,
+            pad_x,
+            pad_y,
+            out_w: dst,
+            out_h: dst,
+        },
     )
 }
 
@@ -127,11 +136,7 @@ pub fn decode_letterbox_nchw(
 /// Crop `(x1,y1,x2,y2)` from the original image (any orientation) and resize
 /// to `dst x dst` (no letterbox; ArcFace / DINOv2 expect a tight square).
 /// Coordinates are clamped to image bounds; degenerate boxes get a 1x1 crop.
-pub fn crop_resize(
-    src: &DynamicImage,
-    bbox: (f32, f32, f32, f32),
-    dst: u32,
-) -> RgbImage {
+pub fn crop_resize(src: &DynamicImage, bbox: (f32, f32, f32, f32), dst: u32) -> RgbImage {
     let (sw, sh) = src.dimensions();
     let (x1, y1, x2, y2) = bbox;
     let x1 = x1.floor().clamp(0.0, sw as f32 - 1.0) as u32;
@@ -141,7 +146,9 @@ pub fn crop_resize(
     let w = x2 - x1;
     let h = y2 - y1;
     let cropped = src.crop_imm(x1, y1, w, h);
-    cropped.resize_exact(dst, dst, FilterType::Triangle).to_rgb8()
+    cropped
+        .resize_exact(dst, dst, FilterType::Triangle)
+        .to_rgb8()
 }
 
 /// Crop + normalize directly to NCHW for ArcFace / DINOv2.
@@ -195,7 +202,7 @@ mod tests {
         assert_eq!(arr.shape(), &[1, 3, 112, 112]);
         // ArcFace: pixel 0 -> -1.0, pixel 255 -> ~1.0
         let v0 = arr[[0, 0, 0, 0]];
-        assert!(v0 >= -1.001 && v0 <= 1.001, "v0={v0}");
+        assert!((-1.001..=1.001).contains(&v0), "v0={v0}");
     }
 
     #[test]

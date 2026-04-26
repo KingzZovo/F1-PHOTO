@@ -1,7 +1,7 @@
 use axum::{
-    Json,
     http::StatusCode,
     response::{IntoResponse, Response},
+    Json,
 };
 use serde::Serialize;
 use thiserror::Error;
@@ -66,13 +66,9 @@ impl IntoResponse for AppError {
                 "PROJECT_FORBIDDEN",
                 "no permission for this project".into(),
             ),
-            AppError::InvalidInput(m) => {
-                (StatusCode::BAD_REQUEST, "INVALID_INPUT", m.clone())
-            }
+            AppError::InvalidInput(m) => (StatusCode::BAD_REQUEST, "INVALID_INPUT", m.clone()),
             AppError::Conflict(m) => (StatusCode::CONFLICT, "CONFLICT", m.clone()),
-            AppError::TooLarge(m) => {
-                (StatusCode::PAYLOAD_TOO_LARGE, "TOO_LARGE", m.clone())
-            }
+            AppError::TooLarge(m) => (StatusCode::PAYLOAD_TOO_LARGE, "TOO_LARGE", m.clone()),
             AppError::Db(e) => {
                 tracing::error!(error = ?e, "db error");
                 (

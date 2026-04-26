@@ -55,12 +55,11 @@ where
         let claims = app.jwt.verify(token).map_err(|_| AppError::Unauthorized)?;
 
         // Re-confirm the user still exists and is not disabled.
-        let row: Option<(String, String, Option<DateTime<Utc>>)> = sqlx::query_as(
-            "SELECT username, role::text, disabled_at FROM users WHERE id = $1",
-        )
-        .bind(claims.sub)
-        .fetch_optional(&app.db)
-        .await?;
+        let row: Option<(String, String, Option<DateTime<Utc>>)> =
+            sqlx::query_as("SELECT username, role::text, disabled_at FROM users WHERE id = $1")
+                .bind(claims.sub)
+                .fetch_optional(&app.db)
+                .await?;
 
         let (username, role, disabled_at) = row.ok_or(AppError::Unauthorized)?;
         if disabled_at.is_some() {

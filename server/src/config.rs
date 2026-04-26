@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use std::env;
 use std::path::PathBuf;
 
@@ -23,10 +23,9 @@ impl Config {
         let _ = load_dotenv(".env");
 
         let bind_addr = env::var("F1P_BIND").unwrap_or_else(|_| "0.0.0.0:8080".into());
-        let database_url = env::var("F1P_DATABASE_URL")
-            .context("F1P_DATABASE_URL must be set")?;
-        let jwt_secret = env::var("F1P_JWT_SECRET")
-            .context("F1P_JWT_SECRET must be set (32+ chars)")?;
+        let database_url = env::var("F1P_DATABASE_URL").context("F1P_DATABASE_URL must be set")?;
+        let jwt_secret =
+            env::var("F1P_JWT_SECRET").context("F1P_JWT_SECRET must be set (32+ chars)")?;
         if jwt_secret.len() < 32 {
             bail!("F1P_JWT_SECRET must be at least 32 characters");
         }

@@ -1,6 +1,6 @@
 use crate::api::AppState;
-use axum::{Json, extract::State, http::StatusCode};
-use serde_json::{Value, json};
+use axum::{extract::State, http::StatusCode, Json};
+use serde_json::{json, Value};
 
 /// Process is alive. No DB check.
 pub async fn healthz() -> Json<Value> {

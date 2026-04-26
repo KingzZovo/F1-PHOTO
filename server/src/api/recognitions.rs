@@ -5,7 +5,7 @@
 //! - GET   /api/projects/:pid/photos/:photo_id/detections
 //! - GET   /api/projects/:pid/photos/:photo_id/recognition_items
 //! - GET   /api/projects/:pid/recognition_items
-//!         filters: photo_id, owner_type+owner_id, status, page, page_size
+//!   filters: photo_id, owner_type+owner_id, status, page, page_size
 //! - GET   /api/projects/:pid/recognition_items/:id
 //! - PATCH /api/projects/:pid/recognition_items/:id/correct
 //!
@@ -16,14 +16,14 @@
 //! Until then these endpoints return empty lists; tests seed rows via SQL.
 
 use axum::{
-    Json,
     extract::{Path, Query, State},
     http::StatusCode,
+    Json,
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
-use sqlx::{Postgres, QueryBuilder, Row, postgres::PgRow};
+use serde_json::{json, Value};
+use sqlx::{postgres::PgRow, Postgres, QueryBuilder, Row};
 use uuid::Uuid;
 
 use crate::api::AppState;
@@ -33,8 +33,7 @@ use crate::error::{AppError, AppResult};
 
 const CORRECTION_OWNER_TYPES: &[&str] = &["person", "tool", "device"];
 const FILTER_OWNER_TYPES: &[&str] = &["person", "tool", "device", "wo_raw"];
-const ALLOWED_STATUSES: &[&str] =
-    &["matched", "learning", "unmatched", "manual_corrected"];
+const ALLOWED_STATUSES: &[&str] = &["matched", "learning", "unmatched", "manual_corrected"];
 
 // =============================================================================
 // DTOs
@@ -139,13 +138,12 @@ async fn ensure_photo_in_project(
     project_id: Uuid,
     photo_id: Uuid,
 ) -> AppResult<()> {
-    let exists: Option<(Uuid,)> = sqlx::query_as(
-        "SELECT id FROM photos WHERE id = $1 AND project_id = $2",
-    )
-    .bind(photo_id)
-    .bind(project_id)
-    .fetch_optional(db)
-    .await?;
+    let exists: Option<(Uuid,)> =
+        sqlx::query_as("SELECT id FROM photos WHERE id = $1 AND project_id = $2")
+            .bind(photo_id)
+            .bind(project_id)
+            .fetch_optional(db)
+            .await?;
     if exists.is_none() {
         return Err(AppError::NotFound("photo not found".into()));
     }
@@ -250,8 +248,9 @@ pub async fn list_items(
     }
 
     // count
-    let mut count_qb: QueryBuilder<Postgres> =
-        QueryBuilder::new("SELECT COUNT(*)::bigint AS n FROM recognition_items WHERE project_id = ");
+    let mut count_qb: QueryBuilder<Postgres> = QueryBuilder::new(
+        "SELECT COUNT(*)::bigint AS n FROM recognition_items WHERE project_id = ",
+    );
     count_qb.push_bind(project_id);
     push_filters(&mut count_qb, &q);
     let total: i64 = count_qb.build().fetch_one(&s.db).await?.get("n");
@@ -283,7 +282,9 @@ fn push_filters(qb: &mut QueryBuilder<'_, Postgres>, q: &ListItemsQuery) {
         qb.push(" AND photo_id = ").push_bind(p);
     }
     if let Some(st) = q.status.as_ref() {
-        qb.push(" AND status = ").push_bind(st.clone()).push("::match_status");
+        qb.push(" AND status = ")
+            .push_bind(st.clone())
+            .push("::match_status");
     }
     if let Some(t) = q.owner_type.as_ref() {
         qb.push(" AND COALESCE(corrected_owner_type::text, suggested_owner_type::text) = ")
@@ -347,7 +348,7 @@ pub async fn correct_item(
     }
     let intent = match (input.owner_type.as_deref(), input.owner_id) {
         (None, None) => Intent::Clear,
-        (Some(t), None) if t.is_empty() => Intent::Clear,
+        (Some(""), None) => Intent::Clear,
         (Some(t), Some(oid)) if !t.is_empty() => Intent::Set(t.to_string(), oid),
         _ => {
             return Err(AppError::InvalidInput(

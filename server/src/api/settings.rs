@@ -13,10 +13,10 @@ use crate::api::AppState;
 use crate::audit::Audit;
 use crate::auth::{CurrentUser, RequireAdmin};
 use crate::error::{AppError, AppResult};
-use axum::{Json, extract::State};
+use axum::{extract::State, Json};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use serde_json::{Map, Value, json};
+use serde_json::{json, Map, Value};
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
@@ -77,20 +77,14 @@ fn validate_value(key: &str, kind: Kind, value: &Value) -> AppResult<Value> {
                 }
                 Ok(Value::String(s.clone()))
             }
-            _ => Err(AppError::InvalidInput(format!(
-                "{key}: expected string"
-            ))),
+            _ => Err(AppError::InvalidInput(format!("{key}: expected string"))),
         },
         Kind::Bool => match value {
             Value::Bool(b) => Ok(Value::Bool(*b)),
-            _ => Err(AppError::InvalidInput(format!(
-                "{key}: expected boolean"
-            ))),
+            _ => Err(AppError::InvalidInput(format!("{key}: expected boolean"))),
         },
         Kind::Float { lo, hi } => match value.as_f64() {
-            Some(f) if f.is_finite() && f >= lo && f <= hi => {
-                Ok(json!(f))
-            }
+            Some(f) if f.is_finite() && f >= lo && f <= hi => Ok(json!(f)),
             _ => Err(AppError::InvalidInput(format!(
                 "{key}: expected number in [{lo}, {hi}]"
             ))),
@@ -228,13 +222,7 @@ pub async fn patch_all(
     Ok(Json(after))
 }
 
-async fn write_audit(
-    s: &AppState,
-    actor: Uuid,
-    target: String,
-    before: Value,
-    after: Value,
-) {
+async fn write_audit(s: &AppState, actor: Uuid, target: String, before: Value, after: Value) {
     Audit::new("settings.update", "settings")
         .actor(actor)
         .target(target)

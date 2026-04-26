@@ -17,7 +17,7 @@
 //! globally; the release tarball/zip ships a compiled portable PG tree
 //! under `bundled-pg/` (Linux) or `bundled-pg\` (Windows).
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use std::env;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -43,19 +43,17 @@ impl BundledPg {
         }
 
         let bin_dir = PathBuf::from(
-            env::var("F1P_BUNDLED_PG_DIR")
-                .unwrap_or_else(|_| "./bundled-pg/bin".into()),
+            env::var("F1P_BUNDLED_PG_DIR").unwrap_or_else(|_| "./bundled-pg/bin".into()),
         );
         let data_dir = PathBuf::from(
-            env::var("F1P_BUNDLED_PG_DATA")
-                .unwrap_or_else(|_| "./bundled-pg-data".into()),
+            env::var("F1P_BUNDLED_PG_DATA").unwrap_or_else(|_| "./bundled-pg-data".into()),
         );
         let port: u16 = env::var("F1P_BUNDLED_PG_PORT")
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(DEFAULT_PORT);
-        let password = env::var("F1P_BUNDLED_PG_PASSWORD")
-            .unwrap_or_else(|_| "f1photo_prod".into());
+        let password =
+            env::var("F1P_BUNDLED_PG_PASSWORD").unwrap_or_else(|_| "f1photo_prod".into());
 
         let initdb = which(&bin_dir, "initdb")?;
         let postgres = which(&bin_dir, "postgres")?;
@@ -232,20 +230,18 @@ fn wait_for_listen(port: u16, timeout: Duration) -> Result<()> {
 
 /// Idempotently `CREATE DATABASE` for the application using the bundled `psql`.
 /// Connects to the default `postgres` cluster DB. Safe to call on every boot.
-fn ensure_database(
-    bin_dir: &Path,
-    port: u16,
-    password: &str,
-    user: &str,
-    db: &str,
-) -> Result<()> {
+fn ensure_database(bin_dir: &Path, port: u16, password: &str, user: &str, db: &str) -> Result<()> {
     let psql = which(bin_dir, "psql")?;
     // Check if DB exists.
     let check = Command::new(&psql)
-        .arg("-h").arg("127.0.0.1")
-        .arg("-p").arg(port.to_string())
-        .arg("-U").arg(user)
-        .arg("-d").arg("postgres")
+        .arg("-h")
+        .arg("127.0.0.1")
+        .arg("-p")
+        .arg(port.to_string())
+        .arg("-U")
+        .arg(user)
+        .arg("-d")
+        .arg("postgres")
         .arg("-tAc")
         .arg(format!("SELECT 1 FROM pg_database WHERE datname='{db}'"))
         .env("PGPASSWORD", password)
@@ -263,11 +259,16 @@ fn ensure_database(
     }
     tracing::info!(%db, "creating bundled application database");
     let create = Command::new(&psql)
-        .arg("-h").arg("127.0.0.1")
-        .arg("-p").arg(port.to_string())
-        .arg("-U").arg(user)
-        .arg("-d").arg("postgres")
-        .arg("-c").arg(format!("CREATE DATABASE \"{db}\""))
+        .arg("-h")
+        .arg("127.0.0.1")
+        .arg("-p")
+        .arg(port.to_string())
+        .arg("-U")
+        .arg(user)
+        .arg("-d")
+        .arg("postgres")
+        .arg("-c")
+        .arg(format!("CREATE DATABASE \"{db}\""))
         .env("PGPASSWORD", password)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
