@@ -123,13 +123,66 @@ matching.
 2. Add an integration test that uses the bundled-pg + a checked-in
    small-but-real face crop to verify at least one matched-bucket
    `recognition_items` row is produced (the smoke assertion currently
-   covers the *unmatched* bucket on a freshly-seeded gallery).
+   covers the *unmatched* bucket on a freshly-seeded gallery). Tracked
+   as **milestone #2b** in `docs/v1.4.x-v1.5.0-roadmap.md`. The
+   bootstrap-path prerequisite (gallery seeding from `owner_type=person`
+   uploads) shipped in milestone #2a (commit 9a85f7c) — see
+   "### Milestone #2a status" below.
 3. Optional: ship a real MobileNetV3 angle classifier into
    `models/angle_classify.onnx` if the recognition pipeline ever needs
    pose-aware gating; not required for matching as it stands.
 4. Run a real-dataset smoke (curated face + tool crops + populated
    gallery) to establish baseline precision/recall numbers before
    declaring the rollout fully cut over.
+
+### Milestone #2a status (2026-04-27 +08)
+
+Owner-known person photo bootstrap shipped at commit **9a85f7c**
+(`feat(worker): owner-known person photo seeds gallery as 'initial'
+(milestone #2a)`).
+
+- `worker::run_real_pipeline` now branches on `photos.owner_type` /
+  `photos.owner_id`. When `owner_type='person'` the new
+  `run_face_bootstrap_pipeline` runs SCRFD detect + ArcFace embed and,
+  for each detected face, INSERTs a `detections` row
+  (`match_status='matched'`, `matched_owner_type='person'`,
+  `matched_owner_id=<P>`, `matched_score=1.0`) **and** an
+  `identity_embeddings` row (`source='initial'`, `owner_type='person'`,
+  `owner_id=<P>`, `source_photo`, `source_project`). No
+  `recognition_items` row is written for owner-known uploads, no
+  recall is invoked, no `recall::augment` runs. This is what fills the
+  cold-start gap: prior to #2a, only `recall::augment` (`'incremental'`,
+  score ≥ 0.95) and `finetune.rs` (`'manual'`) wrote into the gallery,
+  so a freshly-deployed instance had no seeds and the matched bucket
+  could never fire on later wo_raw uploads of the same person.
+- Owner-known photos with **zero detected faces** log a warning and
+  seed nothing. The upload itself still succeeds (the API contract is
+  unchanged) — it just doesn't produce a usable seed; the operator can
+  re-shoot or correct.
+- All detected faces in a single owner-known upload are attributed to
+  the same owner. This matches the upload's intent ("this is person X"
+  registration shots are expected to contain X's face) and is the v1
+  simplification we want; multi-face disambiguation (largest-face-only,
+  or reject-multi-face) can be added later if the false-seed rate
+  becomes a problem.
+- `owner_type='tool'` and `owner_type='device'` uploads are **NOT** yet
+  on the bootstrap path. They currently log a `tracing::warn!` line
+  and fall through to the standard pipeline, so their gallery is still
+  empty after upload. This is tracked as **milestone #2a-tool** in the
+  roadmap (deferred); the implementation is symmetric — YOLOv8 region
+  proposal + DINOv2 per-crop embed → `'initial'` rows for
+  `owner_type='tool'` / `'device'`.
+- Verification at #2a:
+  - cargo fmt + cargo clippy -- -D warnings: clean.
+  - cargo test --lib: 30/30 passing (no new tests; the bootstrap path
+    is end-to-end exercised by milestone #2b once the fixture lands).
+  - smoke-e2e.sh as f1u against the new release binary (md5
+    `af8b065712e27253910cb2b33cc43c08`, size 12,068,568 B):
+    ✓ wo_raw upload still drains the queue, photo terminal `unmatched`,
+    `recognition_items.total=1` (standard pipeline unchanged), 0 WARN /
+    0 ERROR / 0 panic, `ort_available=true ready=true`. The bootstrap
+    branch only kicks in on `owner_type=person`; wo_raw is fall-through
+    clean.
 
 ## 2. Android client
 
