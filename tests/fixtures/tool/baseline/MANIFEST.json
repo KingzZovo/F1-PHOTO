@@ -1,0 +1,534 @@
+{
+  "source": "COCO val2017 instances annotations",
+  "annotations_url": "https://images.cocodataset.org/annotations/annotations_trainval2017.zip",
+  "image_url_prefix": "https://images.cocodataset.org/val2017/",
+  "selection": {
+    "classes": [
+      "knife",
+      "scissors",
+      "fork",
+      "spoon",
+      "bowl",
+      "laptop",
+      "mouse",
+      "keyboard",
+      "cell phone",
+      "tv",
+      "microwave",
+      "oven",
+      "toaster",
+      "refrigerator"
+    ],
+    "per_class": 3,
+    "min_target_bbox_area_px": 9216,
+    "dominance_ratio": 0.5,
+    "dominance": "target_area >= dominance_ratio * largest_ann_area",
+    "seed": 20260427
+  },
+  "licenses": {
+    "1": {
+      "url": "http://creativecommons.org/licenses/by-nc-sa/2.0/",
+      "id": 1,
+      "name": "Attribution-NonCommercial-ShareAlike License"
+    },
+    "2": {
+      "url": "http://creativecommons.org/licenses/by-nc/2.0/",
+      "id": 2,
+      "name": "Attribution-NonCommercial License"
+    },
+    "3": {
+      "url": "http://creativecommons.org/licenses/by-nc-nd/2.0/",
+      "id": 3,
+      "name": "Attribution-NonCommercial-NoDerivs License"
+    },
+    "4": {
+      "url": "http://creativecommons.org/licenses/by/2.0/",
+      "id": 4,
+      "name": "Attribution License"
+    },
+    "5": {
+      "url": "http://creativecommons.org/licenses/by-sa/2.0/",
+      "id": 5,
+      "name": "Attribution-ShareAlike License"
+    },
+    "6": {
+      "url": "http://creativecommons.org/licenses/by-nd/2.0/",
+      "id": 6,
+      "name": "Attribution-NoDerivs License"
+    },
+    "7": {
+      "url": "http://flickr.com/commons/usage/",
+      "id": 7,
+      "name": "No known copyright restrictions"
+    },
+    "8": {
+      "url": "http://www.usa.gov/copyright.shtml",
+      "id": 8,
+      "name": "United States Government Work"
+    }
+  },
+  "images": [
+    {
+      "image_id": 116206,
+      "target_area": 11899.900850000009,
+      "width": 640,
+      "height": 480,
+      "file_name": "000000116206.jpg",
+      "license_id": 1,
+      "class": "knife",
+      "category_id": 49,
+      "selection_level": "med"
+    },
+    {
+      "image_id": 45728,
+      "target_area": 13901.791000000001,
+      "width": 640,
+      "height": 480,
+      "file_name": "000000045728.jpg",
+      "license_id": 3,
+      "class": "knife",
+      "category_id": 49,
+      "selection_level": "med"
+    },
+    {
+      "image_id": 223090,
+      "target_area": 22166.7354,
+      "width": 640,
+      "height": 480,
+      "file_name": "000000223090.jpg",
+      "license_id": 3,
+      "class": "knife",
+      "category_id": 49,
+      "selection_level": "med"
+    },
+    {
+      "image_id": 348012,
+      "target_area": 73521.38285,
+      "width": 640,
+      "height": 428,
+      "file_name": "000000348012.jpg",
+      "license_id": 2,
+      "class": "scissors",
+      "category_id": 87,
+      "selection_level": "strict"
+    },
+    {
+      "image_id": 357501,
+      "target_area": 53892.352900000005,
+      "width": 640,
+      "height": 480,
+      "file_name": "000000357501.jpg",
+      "license_id": 2,
+      "class": "scissors",
+      "category_id": 87,
+      "selection_level": "strict"
+    },
+    {
+      "image_id": 351096,
+      "target_area": 34363.83600000001,
+      "width": 500,
+      "height": 375,
+      "file_name": "000000351096.jpg",
+      "license_id": 1,
+      "class": "scissors",
+      "category_id": 87,
+      "selection_level": "strict"
+    },
+    {
+      "image_id": 559707,
+      "target_area": 9630.5819,
+      "width": 478,
+      "height": 640,
+      "file_name": "000000559707.jpg",
+      "license_id": 2,
+      "class": "fork",
+      "category_id": 48,
+      "selection_level": "med"
+    },
+    {
+      "image_id": 75393,
+      "target_area": 12651.716349999997,
+      "width": 640,
+      "height": 435,
+      "file_name": "000000075393.jpg",
+      "license_id": 1,
+      "class": "fork",
+      "category_id": 48,
+      "selection_level": "med"
+    },
+    {
+      "image_id": 358427,
+      "target_area": 30403.361099999995,
+      "width": 640,
+      "height": 427,
+      "file_name": "000000358427.jpg",
+      "license_id": 3,
+      "class": "fork",
+      "category_id": 48,
+      "selection_level": "med"
+    },
+    {
+      "image_id": 562059,
+      "target_area": 12475.240900000006,
+      "width": 427,
+      "height": 640,
+      "file_name": "000000562059.jpg",
+      "license_id": 4,
+      "class": "spoon",
+      "category_id": 50,
+      "selection_level": "loose"
+    },
+    {
+      "image_id": 196009,
+      "target_area": 15716.1203,
+      "width": 640,
+      "height": 480,
+      "file_name": "000000196009.jpg",
+      "license_id": 3,
+      "class": "spoon",
+      "category_id": 50,
+      "selection_level": "loose"
+    },
+    {
+      "image_id": 356347,
+      "target_area": 15570.853700000001,
+      "width": 640,
+      "height": 480,
+      "file_name": "000000356347.jpg",
+      "license_id": 3,
+      "class": "spoon",
+      "category_id": 50,
+      "selection_level": "loose"
+    },
+    {
+      "image_id": 521601,
+      "target_area": 292439.21695000003,
+      "width": 640,
+      "height": 480,
+      "file_name": "000000521601.jpg",
+      "license_id": 3,
+      "class": "bowl",
+      "category_id": 51,
+      "selection_level": "strict"
+    },
+    {
+      "image_id": 221872,
+      "target_area": 143729.3101,
+      "width": 640,
+      "height": 427,
+      "file_name": "000000221872.jpg",
+      "license_id": 3,
+      "class": "bowl",
+      "category_id": 51,
+      "selection_level": "strict"
+    },
+    {
+      "image_id": 99053,
+      "target_area": 206335.9743,
+      "width": 640,
+      "height": 559,
+      "file_name": "000000099053.jpg",
+      "license_id": 4,
+      "class": "bowl",
+      "category_id": 51,
+      "selection_level": "strict"
+    },
+    {
+      "image_id": 181499,
+      "target_area": 159489.81805000003,
+      "width": 640,
+      "height": 513,
+      "file_name": "000000181499.jpg",
+      "license_id": 1,
+      "class": "laptop",
+      "category_id": 73,
+      "selection_level": "strict"
+    },
+    {
+      "image_id": 182202,
+      "target_area": 112195.84035,
+      "width": 640,
+      "height": 385,
+      "file_name": "000000182202.jpg",
+      "license_id": 2,
+      "class": "laptop",
+      "category_id": 73,
+      "selection_level": "strict"
+    },
+    {
+      "image_id": 80949,
+      "target_area": 123747.9095,
+      "width": 640,
+      "height": 438,
+      "file_name": "000000080949.jpg",
+      "license_id": 5,
+      "class": "laptop",
+      "category_id": 73,
+      "selection_level": "strict"
+    },
+    {
+      "image_id": 560011,
+      "target_area": 17469.628099999994,
+      "width": 332,
+      "height": 500,
+      "file_name": "000000560011.jpg",
+      "license_id": 5,
+      "class": "mouse",
+      "category_id": 74,
+      "selection_level": "loose"
+    },
+    {
+      "image_id": 346638,
+      "target_area": 11823.995449999999,
+      "width": 640,
+      "height": 480,
+      "file_name": "000000346638.jpg",
+      "license_id": 3,
+      "class": "mouse",
+      "category_id": 74,
+      "selection_level": "loose"
+    },
+    {
+      "image_id": 68765,
+      "target_area": 16986.791350000003,
+      "width": 640,
+      "height": 480,
+      "file_name": "000000068765.jpg",
+      "license_id": 4,
+      "class": "mouse",
+      "category_id": 74,
+      "selection_level": "loose"
+    },
+    {
+      "image_id": 316015,
+      "target_area": 13125.286199999999,
+      "width": 500,
+      "height": 400,
+      "file_name": "000000316015.jpg",
+      "license_id": 6,
+      "class": "keyboard",
+      "category_id": 76,
+      "selection_level": "strict"
+    },
+    {
+      "image_id": 561366,
+      "target_area": 32171.698750000003,
+      "width": 640,
+      "height": 480,
+      "file_name": "000000561366.jpg",
+      "license_id": 5,
+      "class": "keyboard",
+      "category_id": 76,
+      "selection_level": "strict"
+    },
+    {
+      "image_id": 335658,
+      "target_area": 52561.85175000001,
+      "width": 640,
+      "height": 480,
+      "file_name": "000000335658.jpg",
+      "license_id": 2,
+      "class": "keyboard",
+      "category_id": 76,
+      "selection_level": "strict"
+    },
+    {
+      "image_id": 99428,
+      "target_area": 76940.85184999999,
+      "width": 640,
+      "height": 480,
+      "file_name": "000000099428.jpg",
+      "license_id": 1,
+      "class": "cell phone",
+      "category_id": 77,
+      "selection_level": "strict"
+    },
+    {
+      "image_id": 388927,
+      "target_area": 36432.8419,
+      "width": 480,
+      "height": 640,
+      "file_name": "000000388927.jpg",
+      "license_id": 1,
+      "class": "cell phone",
+      "category_id": 77,
+      "selection_level": "strict"
+    },
+    {
+      "image_id": 112997,
+      "target_area": 94459.14445,
+      "width": 480,
+      "height": 640,
+      "file_name": "000000112997.jpg",
+      "license_id": 2,
+      "class": "cell phone",
+      "category_id": 77,
+      "selection_level": "strict"
+    },
+    {
+      "image_id": 229659,
+      "target_area": 86556.84274999998,
+      "width": 640,
+      "height": 480,
+      "file_name": "000000229659.jpg",
+      "license_id": 6,
+      "class": "tv",
+      "category_id": 72,
+      "selection_level": "strict"
+    },
+    {
+      "image_id": 368684,
+      "target_area": 44146.061400000006,
+      "width": 640,
+      "height": 480,
+      "file_name": "000000368684.jpg",
+      "license_id": 1,
+      "class": "tv",
+      "category_id": 72,
+      "selection_level": "strict"
+    },
+    {
+      "image_id": 98839,
+      "target_area": 122836.79569999999,
+      "width": 640,
+      "height": 480,
+      "file_name": "000000098839.jpg",
+      "license_id": 1,
+      "class": "tv",
+      "category_id": 72,
+      "selection_level": "strict"
+    },
+    {
+      "image_id": 319696,
+      "target_area": 45692.99095,
+      "width": 500,
+      "height": 333,
+      "file_name": "000000319696.jpg",
+      "license_id": 3,
+      "class": "microwave",
+      "category_id": 78,
+      "selection_level": "strict"
+    },
+    {
+      "image_id": 571313,
+      "target_area": 9938.6544,
+      "width": 480,
+      "height": 640,
+      "file_name": "000000571313.jpg",
+      "license_id": 1,
+      "class": "microwave",
+      "category_id": 78,
+      "selection_level": "strict"
+    },
+    {
+      "image_id": 269866,
+      "target_area": 111520.5995,
+      "width": 640,
+      "height": 427,
+      "file_name": "000000269866.jpg",
+      "license_id": 1,
+      "class": "microwave",
+      "category_id": 78,
+      "selection_level": "strict"
+    },
+    {
+      "image_id": 64868,
+      "target_area": 38633.25785000001,
+      "width": 500,
+      "height": 375,
+      "file_name": "000000064868.jpg",
+      "license_id": 2,
+      "class": "oven",
+      "category_id": 79,
+      "selection_level": "strict"
+    },
+    {
+      "image_id": 344795,
+      "target_area": 161899.46589999998,
+      "width": 640,
+      "height": 361,
+      "file_name": "000000344795.jpg",
+      "license_id": 2,
+      "class": "oven",
+      "category_id": 79,
+      "selection_level": "strict"
+    },
+    {
+      "image_id": 194746,
+      "target_area": 186148.20765000003,
+      "width": 500,
+      "height": 375,
+      "file_name": "000000194746.jpg",
+      "license_id": 4,
+      "class": "oven",
+      "category_id": 79,
+      "selection_level": "strict"
+    },
+    {
+      "image_id": 173008,
+      "target_area": 7129.695450000002,
+      "width": 640,
+      "height": 480,
+      "file_name": "000000173008.jpg",
+      "license_id": 5,
+      "class": "toaster",
+      "category_id": 80,
+      "selection_level": "fallback"
+    },
+    {
+      "image_id": 66841,
+      "target_area": 56250.107249999994,
+      "width": 336,
+      "height": 500,
+      "file_name": "000000066841.jpg",
+      "license_id": 1,
+      "class": "toaster",
+      "category_id": 80,
+      "selection_level": "fallback"
+    },
+    {
+      "image_id": 232348,
+      "target_area": 80036.42485,
+      "width": 640,
+      "height": 502,
+      "file_name": "000000232348.jpg",
+      "license_id": 4,
+      "class": "toaster",
+      "category_id": 80,
+      "selection_level": "fallback"
+    },
+    {
+      "image_id": 159791,
+      "target_area": 102775.26695,
+      "width": 500,
+      "height": 375,
+      "file_name": "000000159791.jpg",
+      "license_id": 3,
+      "class": "refrigerator",
+      "category_id": 82,
+      "selection_level": "strict"
+    },
+    {
+      "image_id": 512330,
+      "target_area": 169476.2525,
+      "width": 426,
+      "height": 640,
+      "file_name": "000000512330.jpg",
+      "license_id": 2,
+      "class": "refrigerator",
+      "category_id": 82,
+      "selection_level": "strict"
+    },
+    {
+      "image_id": 404191,
+      "target_area": 124140.45860000003,
+      "width": 375,
+      "height": 500,
+      "file_name": "000000404191.jpg",
+      "license_id": 3,
+      "class": "refrigerator",
+      "category_id": 82,
+      "selection_level": "strict"
+    }
+  ]
+}

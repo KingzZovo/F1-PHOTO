@@ -1,0 +1,780 @@
+{
+  "distributions": {
+    "device_count": {
+      "0": 42,
+      "1": 0,
+      "2+": 0
+    },
+    "device_score_quantiles": {
+      "max": null,
+      "median": null,
+      "min": null,
+      "p25": null,
+      "p75": null
+    },
+    "face_count": {
+      "0": 36,
+      "1": 4,
+      "2": 1,
+      "3+": 1
+    },
+    "face_score_quantiles": {
+      "max": 0.7418121695518494,
+      "median": 0.6050939559936523,
+      "min": 0.524451494216919,
+      "p25": 0.5535714626312256,
+      "p75": 0.677537202835083
+    },
+    "photo_status": {
+      "unmatched": 42
+    },
+    "recognition_items_status": {
+      "unmatched": 137
+    },
+    "recognition_items_total": {
+      "0": 0,
+      "1": 9,
+      "2": 14,
+      "3+": 19
+    },
+    "tool_count": {
+      "0": 0,
+      "1": 10,
+      "2+": 32
+    },
+    "tool_score_quantiles": {
+      "max": 1.0,
+      "median": 0.6835610270500183,
+      "min": 0.25055748224258423,
+      "p25": 0.43054622411727905,
+      "p75": 0.8340215086936951
+    }
+  },
+  "meta": {
+    "photo_count": 42,
+    "photos_glob": "tests/fixtures/tool/baseline/**/*.jpg",
+    "project_id": "f9a13cf7-9bb8-440a-b99d-03b799ce5abf",
+    "thresholds_default": {
+      "augment_upper": 0.95,
+      "low_lower": 0.5,
+      "match_lower": 0.62
+    },
+    "work_order_id": "30af3e75-406e-43f2-9c5c-12404484e623"
+  },
+  "per_photo": [
+    {
+      "bytes": 143426,
+      "device_count": 0,
+      "face_count": 3,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": 0.7418121695518494,
+      "max_tool_score": 0.8340215086936951,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/06/064a1dbf3418a71218e85213d4f990b6e7e2bbdf3ca980d3f86f8969e8101002.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 8
+      },
+      "recognition_items_total": 8,
+      "status": "unmatched",
+      "tool_count": 5,
+      "width": 0
+    },
+    {
+      "bytes": 207500,
+      "device_count": 0,
+      "face_count": 0,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": null,
+      "max_tool_score": 0.6659214496612549,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/07/075b357e2d31b1bc48489a7d8cbe18473e6b4801472b8306365f68a37ae1030f.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 2
+      },
+      "recognition_items_total": 2,
+      "status": "unmatched",
+      "tool_count": 2,
+      "width": 0
+    },
+    {
+      "bytes": 120730,
+      "device_count": 0,
+      "face_count": 0,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": null,
+      "max_tool_score": 0.6835610270500183,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/08/08e39064a965e47d55df33298f53892e1f7dd4f1c1a4715dd73c0d471a8f70b5.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 2
+      },
+      "recognition_items_total": 2,
+      "status": "unmatched",
+      "tool_count": 2,
+      "width": 0
+    },
+    {
+      "bytes": 119138,
+      "device_count": 0,
+      "face_count": 0,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": null,
+      "max_tool_score": 0.8548105955123901,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/0c/0c7e7e080936a8120fccf67e21f6142ed8a452e1e9411454b0900923dac247f0.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 3
+      },
+      "recognition_items_total": 3,
+      "status": "unmatched",
+      "tool_count": 3,
+      "width": 0
+    },
+    {
+      "bytes": 220687,
+      "device_count": 0,
+      "face_count": 0,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": null,
+      "max_tool_score": 0.9386489391326904,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/0d/0d26126da0200cbfb7b59f925b427e5b60d9c9341d4be2b510bd67e61fa153ef.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 6
+      },
+      "recognition_items_total": 6,
+      "status": "unmatched",
+      "tool_count": 6,
+      "width": 0
+    },
+    {
+      "bytes": 109107,
+      "device_count": 0,
+      "face_count": 0,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": null,
+      "max_tool_score": 0.8871358633041382,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/10/10db7db622e57864b8c1fbc9aeb974ad0d93310fff611791a7c4fd73e03ae55b.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 2
+      },
+      "recognition_items_total": 2,
+      "status": "unmatched",
+      "tool_count": 2,
+      "width": 0
+    },
+    {
+      "bytes": 223671,
+      "device_count": 0,
+      "face_count": 0,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": null,
+      "max_tool_score": 0.3456866145133972,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/12/12e52d374ea882e744d9049393126517e28291bb16af81c27d117aa090311a01.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 1
+      },
+      "recognition_items_total": 1,
+      "status": "unmatched",
+      "tool_count": 1,
+      "width": 0
+    },
+    {
+      "bytes": 138923,
+      "device_count": 0,
+      "face_count": 0,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": null,
+      "max_tool_score": 0.733607828617096,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/1c/1ce40717e790580b664ceb944b9739502d1f6b36173f2ca7372df35d1030104a.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 2
+      },
+      "recognition_items_total": 2,
+      "status": "unmatched",
+      "tool_count": 2,
+      "width": 0
+    },
+    {
+      "bytes": 185798,
+      "device_count": 0,
+      "face_count": 0,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": null,
+      "max_tool_score": 0.4049603044986725,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/2c/2c8120553032e12232a900a098b4d42b57c02818eba56b36485ef541bb750a72.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 1
+      },
+      "recognition_items_total": 1,
+      "status": "unmatched",
+      "tool_count": 1,
+      "width": 0
+    },
+    {
+      "bytes": 103027,
+      "device_count": 0,
+      "face_count": 0,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": null,
+      "max_tool_score": 0.9142730832099915,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/2e/2e8ea0f8f880adc4665ec9e310220bfbe26c45daffca122a8ebff434d63cb3ab.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 3
+      },
+      "recognition_items_total": 3,
+      "status": "unmatched",
+      "tool_count": 3,
+      "width": 0
+    },
+    {
+      "bytes": 109815,
+      "device_count": 0,
+      "face_count": 0,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": null,
+      "max_tool_score": 0.4708932042121887,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/33/33ac2fba03d5242761676658dce8d0b0a68ea508bfdf17258e643221834f445a.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 2
+      },
+      "recognition_items_total": 2,
+      "status": "unmatched",
+      "tool_count": 2,
+      "width": 0
+    },
+    {
+      "bytes": 141103,
+      "device_count": 0,
+      "face_count": 0,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": null,
+      "max_tool_score": 0.508953332901001,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/38/38b95ee171a7e57492e6632aa3d3b492e513ed5f7d1453a425e000f30a5611bb.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 2
+      },
+      "recognition_items_total": 2,
+      "status": "unmatched",
+      "tool_count": 2,
+      "width": 0
+    },
+    {
+      "bytes": 144936,
+      "device_count": 0,
+      "face_count": 1,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": 0.5317426919937134,
+      "max_tool_score": 0.9269570112228394,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/3d/3d81e50af1e109fe56d1db5233e5966e617c81e6ea45597c0ceb05e0178e3727.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 7
+      },
+      "recognition_items_total": 7,
+      "status": "unmatched",
+      "tool_count": 6,
+      "width": 0
+    },
+    {
+      "bytes": 207825,
+      "device_count": 0,
+      "face_count": 0,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": null,
+      "max_tool_score": 0.8893125653266907,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/50/50ae104992c88d5356fa5087bd62c51904134cb6ffa507e4c503024c75efe403.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 6
+      },
+      "recognition_items_total": 6,
+      "status": "unmatched",
+      "tool_count": 6,
+      "width": 0
+    },
+    {
+      "bytes": 121891,
+      "device_count": 0,
+      "face_count": 1,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": 0.6786146759986877,
+      "max_tool_score": 0.8996506929397583,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/57/57e4391ce5b3b06e3b778342e9c4272a9a4a93e9fbb8ab8270f4d0c4dfd3e5c5.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 5
+      },
+      "recognition_items_total": 5,
+      "status": "unmatched",
+      "tool_count": 4,
+      "width": 0
+    },
+    {
+      "bytes": 201479,
+      "device_count": 0,
+      "face_count": 2,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": 0.6418373584747314,
+      "max_tool_score": 0.8829718828201294,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/5d/5d0846197660b1c4c51f135c2cf114088ecb11112230e8bbe2a4967f73c5a5da.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 12
+      },
+      "recognition_items_total": 12,
+      "status": "unmatched",
+      "tool_count": 10,
+      "width": 0
+    },
+    {
+      "bytes": 199101,
+      "device_count": 0,
+      "face_count": 0,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": null,
+      "max_tool_score": 0.9015478491783142,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/6b/6b8d7a8a664ddf50ee23c1efb3bc6fb64d875ed2332e965baddd6ff9249fb3bd.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 4
+      },
+      "recognition_items_total": 4,
+      "status": "unmatched",
+      "tool_count": 4,
+      "width": 0
+    },
+    {
+      "bytes": 101496,
+      "device_count": 0,
+      "face_count": 0,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": null,
+      "max_tool_score": 0.8805651664733887,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/6c/6c3cee9f0da8f494523c9bde554da113f44042128b22c94be7bd29d27df1d181.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 2
+      },
+      "recognition_items_total": 2,
+      "status": "unmatched",
+      "tool_count": 2,
+      "width": 0
+    },
+    {
+      "bytes": 174080,
+      "device_count": 0,
+      "face_count": 0,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": null,
+      "max_tool_score": 0.8482192754745483,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/75/75479fd6059bc8bb8bbccd0ac4e2a70081fec30e197b1b97f88409a840a56d53.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 2
+      },
+      "recognition_items_total": 2,
+      "status": "unmatched",
+      "tool_count": 2,
+      "width": 0
+    },
+    {
+      "bytes": 49023,
+      "device_count": 0,
+      "face_count": 0,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": null,
+      "max_tool_score": 0.5605072975158691,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/7b/7b693d91d6a6565e8957be70cf50804c36d5ddd2f921c7505bb0e2d16594697f.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 1
+      },
+      "recognition_items_total": 1,
+      "status": "unmatched",
+      "tool_count": 1,
+      "width": 0
+    },
+    {
+      "bytes": 57276,
+      "device_count": 0,
+      "face_count": 0,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": null,
+      "max_tool_score": 0.9332031011581421,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/81/811b554184a3e1b1d2515f912c3dc972f81bdbcceb607629bef3a21fc5e8db38.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 2
+      },
+      "recognition_items_total": 2,
+      "status": "unmatched",
+      "tool_count": 2,
+      "width": 0
+    },
+    {
+      "bytes": 178113,
+      "device_count": 0,
+      "face_count": 0,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": null,
+      "max_tool_score": 0.838600754737854,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/81/81c0c82b9532e32aa55cc9d8b8bc28d07c8cd83e44221fc85facb020f7d39423.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 4
+      },
+      "recognition_items_total": 4,
+      "status": "unmatched",
+      "tool_count": 4,
+      "width": 0
+    },
+    {
+      "bytes": 127363,
+      "device_count": 0,
+      "face_count": 0,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": null,
+      "max_tool_score": 0.9779617786407471,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/85/8553becb13b9673b395568279b88bcdaec95cf1aff5cf0b577da62330aac2e9d.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 2
+      },
+      "recognition_items_total": 2,
+      "status": "unmatched",
+      "tool_count": 2,
+      "width": 0
+    },
+    {
+      "bytes": 174921,
+      "device_count": 0,
+      "face_count": 0,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": null,
+      "max_tool_score": 0.7301919460296631,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/86/866001cc56b4cd99081f4a86677db1c83fbb412a89898df463698e97db9f20e6.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 2
+      },
+      "recognition_items_total": 2,
+      "status": "unmatched",
+      "tool_count": 2,
+      "width": 0
+    },
+    {
+      "bytes": 266789,
+      "device_count": 0,
+      "face_count": 1,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": 0.5535714626312256,
+      "max_tool_score": 1.0,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/87/875de71a2c80883bdc8d7fe411a1a0e4e796c76998e15b230430e869d44a1fa3.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 2
+      },
+      "recognition_items_total": 2,
+      "status": "unmatched",
+      "tool_count": 1,
+      "width": 0
+    },
+    {
+      "bytes": 119071,
+      "device_count": 0,
+      "face_count": 0,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": null,
+      "max_tool_score": 0.5990371704101562,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/87/877aaee6a69dbb0b21f15a3e34cdedc5f28c68bfa6762ba56cd911f5bd4d92aa.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 1
+      },
+      "recognition_items_total": 1,
+      "status": "unmatched",
+      "tool_count": 1,
+      "width": 0
+    },
+    {
+      "bytes": 41958,
+      "device_count": 0,
+      "face_count": 0,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": null,
+      "max_tool_score": 0.940339207649231,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/8d/8d6aa4c15bbd4a3d47ab960512e2ba569e5053f57c5c4dc001cc242993e16034.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 2
+      },
+      "recognition_items_total": 2,
+      "status": "unmatched",
+      "tool_count": 2,
+      "width": 0
+    },
+    {
+      "bytes": 135458,
+      "device_count": 0,
+      "face_count": 0,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": null,
+      "max_tool_score": 0.9410064816474915,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/8e/8ed86217a895bb5484ccf37bc50af39b67ba1fa68220003c86515199a291d321.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 1
+      },
+      "recognition_items_total": 1,
+      "status": "unmatched",
+      "tool_count": 1,
+      "width": 0
+    },
+    {
+      "bytes": 89347,
+      "device_count": 0,
+      "face_count": 0,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": null,
+      "max_tool_score": 0.8087292909622192,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/9a/9a3c075c9f15b67417d616b5cde10f704705215341ed15414035f8a77277a80e.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 4
+      },
+      "recognition_items_total": 4,
+      "status": "unmatched",
+      "tool_count": 4,
+      "width": 0
+    },
+    {
+      "bytes": 237853,
+      "device_count": 0,
+      "face_count": 0,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": null,
+      "max_tool_score": 0.8966194987297058,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/a4/a4e8405077a8f93115116f548e7d59b29a092a6ac2f749732a525e7b82c2f35a.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 4
+      },
+      "recognition_items_total": 4,
+      "status": "unmatched",
+      "tool_count": 4,
+      "width": 0
+    },
+    {
+      "bytes": 104700,
+      "device_count": 0,
+      "face_count": 0,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": null,
+      "max_tool_score": 0.8940158486366272,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/a9/a97b7899f984d8cbb9505b659cb428c3654a4a7d3505178036e316926c73f0b6.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 7
+      },
+      "recognition_items_total": 7,
+      "status": "unmatched",
+      "tool_count": 7,
+      "width": 0
+    },
+    {
+      "bytes": 110668,
+      "device_count": 0,
+      "face_count": 0,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": null,
+      "max_tool_score": 0.9650638103485107,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/ac/ac3acc4768a763a75c910a5689b394a9c8e09e971b430e17c9364a1e1446f3c1.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 2
+      },
+      "recognition_items_total": 2,
+      "status": "unmatched",
+      "tool_count": 2,
+      "width": 0
+    },
+    {
+      "bytes": 142945,
+      "device_count": 0,
+      "face_count": 0,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": null,
+      "max_tool_score": 0.8260855674743652,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/ad/ad04ec5fe73ad79767e3e29e5602a08c7ff161072d767ce42442adf96e1a1303.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 4
+      },
+      "recognition_items_total": 4,
+      "status": "unmatched",
+      "tool_count": 4,
+      "width": 0
+    },
+    {
+      "bytes": 95543,
+      "device_count": 0,
+      "face_count": 1,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": 0.677537202835083,
+      "max_tool_score": 0.8911949992179871,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/b3/b3cde4030154cacc17d93aa0a01344ec749f96faab680016e0f680458410cb52.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 5
+      },
+      "recognition_items_total": 5,
+      "status": "unmatched",
+      "tool_count": 4,
+      "width": 0
+    },
+    {
+      "bytes": 104348,
+      "device_count": 0,
+      "face_count": 0,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": null,
+      "max_tool_score": 0.9143375158309937,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/b4/b4d43721cbdd42e88494453e2133e97d97f6d24dcb5d9293a61ac2f31de88842.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 5
+      },
+      "recognition_items_total": 5,
+      "status": "unmatched",
+      "tool_count": 5,
+      "width": 0
+    },
+    {
+      "bytes": 90564,
+      "device_count": 0,
+      "face_count": 0,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": null,
+      "max_tool_score": 0.7466496825218201,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/b6/b61281d7ad2ca043eb4a6066becd42586ab66394757171ee2f31277241b4bc51.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 5
+      },
+      "recognition_items_total": 5,
+      "status": "unmatched",
+      "tool_count": 5,
+      "width": 0
+    },
+    {
+      "bytes": 99793,
+      "device_count": 0,
+      "face_count": 0,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": null,
+      "max_tool_score": 1.0,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/b8/b8b012e4b160e2487c81d4a3a851cb4bd184f4654393c0cf6b15c54317b0e512.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 1
+      },
+      "recognition_items_total": 1,
+      "status": "unmatched",
+      "tool_count": 1,
+      "width": 0
+    },
+    {
+      "bytes": 155691,
+      "device_count": 0,
+      "face_count": 0,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": null,
+      "max_tool_score": 0.8563237190246582,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/c7/c7fec132440e63917a4346a16d5f48cd280f0f497d221b1a54c545a398a8aba9.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 5
+      },
+      "recognition_items_total": 5,
+      "status": "unmatched",
+      "tool_count": 5,
+      "width": 0
+    },
+    {
+      "bytes": 85887,
+      "device_count": 0,
+      "face_count": 0,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": null,
+      "max_tool_score": 0.8548651337623596,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/d9/d988a5cb646aa03aa390f016945bcc5b43857488a823b85ac6372287ccdb6003.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 3
+      },
+      "recognition_items_total": 3,
+      "status": "unmatched",
+      "tool_count": 3,
+      "width": 0
+    },
+    {
+      "bytes": 104555,
+      "device_count": 0,
+      "face_count": 0,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": null,
+      "max_tool_score": 0.8126253485679626,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/e6/e671c3e71386f51caae7f0dc55051ed79896567e1ccf34810fe784e60f8c679d.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 1
+      },
+      "recognition_items_total": 1,
+      "status": "unmatched",
+      "tool_count": 1,
+      "width": 0
+    },
+    {
+      "bytes": 143449,
+      "device_count": 0,
+      "face_count": 0,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": null,
+      "max_tool_score": 0.2952307462692261,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/ee/ee8c2a9618c4ddf0dea13bf308d61af2d62fdb4f927409aa56fae182e0671df5.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 1
+      },
+      "recognition_items_total": 1,
+      "status": "unmatched",
+      "tool_count": 1,
+      "width": 0
+    },
+    {
+      "bytes": 116881,
+      "device_count": 0,
+      "face_count": 0,
+      "height": 0,
+      "max_device_score": null,
+      "max_face_score": null,
+      "max_tool_score": 0.44443973898887634,
+      "path": "photos/f9a13cf7-9bb8-440a-b99d-03b799ce5abf/fd/fdb9a021ab591319d13ff2c999e7faa3c2ea95cbcd090bb58ea724c7cb263373.jpg",
+      "recognition_items_by_status": {
+        "unmatched": 1
+      },
+      "recognition_items_total": 1,
+      "status": "unmatched",
+      "tool_count": 1,
+      "width": 0
+    }
+  ]
+}

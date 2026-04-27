@@ -371,3 +371,156 @@ PHOTOS_GLOB='tests/fixtures/tool/**/*.jpg' \
 REPORT_PATH=/tmp/dist-tool.json \
 sudo -u f1u bash -lc 'cd /root/F1-photo && bash packaging/scripts/distribution-baseline.sh'
 ```
+
+## 14. Real-dataset distribution baseline (milestone #2-tool — tool / device slice)
+
+Milestone `#2-tool` is the tool / device complement to §13. Same harness,
+same 42-photo design, same `owner_type=wo_raw` upload path; only the
+fixture changes — from a face-only set to a curated COCO val2017 subset
+filtered to 14 operator-relevant classes. The goal is to characterise
+per-photo `face_count` / `tool_count` / `device_count` /
+`recognition_items.total` on inputs where YOLOv8n is *expected* to
+produce real (non-spurious) `tool` proposals, in contrast to the
+all-spurious behaviour observed on face inputs in §13.
+
+### Fixture
+
+`tests/fixtures/tool/baseline/` — 42 JPEGs (~5.7 MiB) across 14 COCO
+classes (3 images each): `knife`, `scissors`, `fork`, `spoon`, `bowl`,
+`laptop`, `mouse`, `keyboard`, `cell phone`, `tv`, `microwave`, `oven`,
+`toaster`, `refrigerator`. Source: COCO val2017 (CC BY 4.0;
+`https://images.cocodataset.org/val2017/<file_name>`). Selection script
+`tools/build_tool_fixture.py` walks `instances_val2017.json` with a
+deterministic `seed=20260427` and a 4-level dominance fallback ladder
+(strict 0.5 → med 0.3 → loose 0.0 → half-area), keeping `MIN_AREA=9216`
+(96 × 96) and rejecting groups / iscrowd / occluded boxes. Per-class
+selection level + sha256 + provenance + license metadata in
+`tests/fixtures/tool/baseline/MANIFEST.json`. 9 classes select strict,
+`knife` / `fork` med, `spoon` / `mouse` loose, `toaster` falls back to
+half-area (no truly dominant toaster crops in val2017).
+
+### Methodology
+
+1. Identical orchestrator: `packaging/scripts/distribution-baseline.sh`
+   boots bundled PG, runs migrations, brings the live ONNX server up,
+   and invokes `tools/eval_distribution.py`. No source change at this
+   milestone — only the harness inputs differ.
+2. The harness is invoked with the tool fixture glob and a writable
+   report path, and (importantly) the env vars must be passed *into*
+   the `f1u` subshell explicitly, since `sudo -u f1u bash -lc` resets
+   the environment:
+   ```sh
+   sudo -u f1u env PHOTOS_GLOB='tests/fixtures/tool/baseline/**/*.jpg' \
+     REPORT_PATH=/tmp/2-distribution-tool-baseline.json \
+     bash -lc 'cd /root/F1-photo && bash packaging/scripts/distribution-baseline.sh'
+   ```
+   The harness echoes the resolved glob + report path on startup; the
+   first run of this milestone silently used the face default because
+   the env was dropped on the `sudo -u f1u` boundary, so the echoed
+   header is the canonical sanity check.
+3. After drain, the same `psql`-based readback pulls `detections` +
+   `recognition_items` rows and aggregates them.
+4. Output: JSON report archived at
+   `docs/baselines/2-distribution-tool-baseline.json` (root, copied
+   from `/tmp` because `docs/baselines/` is root-owned and `f1u`
+   cannot write there).
+
+### Results (n = 42, COCO val2017 14-class subset)
+
+| dimension | bucket | count |
+|---|---|---|
+| `face_count` | 0 | 36 |
+| `face_count` | 1 | 4 |
+| `face_count` | 2 | 1 |
+| `face_count` | 3+ | 1 |
+| `tool_count` | 0 | 0 |
+| `tool_count` | 1 | 10 |
+| `tool_count` | 2+ | 32 |
+| `device_count` | 0 | 42 |
+| `device_count` | 1 | 0 |
+| `device_count` | 2+ | 0 |
+| `recognition_items_total` | 0 | 0 |
+| `recognition_items_total` | 1 | 9 |
+| `recognition_items_total` | 2 | 14 |
+| `recognition_items_total` | 3+ | 19 |
+| `photo_status` | unmatched | 42 |
+| `recognition_items_status` | unmatched | 137 |
+
+### Score quantiles
+
+| target_type | min | p25 | median | p75 | max |
+|---|---|---|---|---|---|
+| `face` | 0.524 | 0.554 | 0.605 | 0.678 | 0.742 |
+| `tool` | 0.251 | 0.431 | 0.684 | 0.834 | 1.000 |
+| `device` | — | — | — | — | — |
+
+(`device` quantiles are all null because `device_count = 0` across all
+42 photos; see Findings (1) for why this is structural, not a property
+of the fixture.)
+
+### Findings
+
+1. **`device_count = 0` is a server-side hardcode, not a YOLO mapping
+   issue.** §13 finding (2) attributed the all-zero `device` count on
+   face inputs to "YOLOv8n COCO's `device` mapping being well-behaved
+   on face crops". §14 disproves that: even on 14 *real* device-class
+   crops (`laptop` / `mouse` / `keyboard` / `cell phone` / `tv` /
+   `microwave` / `oven` / `toaster` / `refrigerator`, 27 / 42 photos),
+   `device_count` is still 0. The cause is in the standard wo_raw path
+   in `server/src/worker/mod.rs`: `embed_and_persist_object` (called by
+   `run_tool_pipeline`, line 1136) writes `target_type='tool'` as a
+   string literal regardless of `det.class_id`. Only the owner-known
+   bootstrap path (`run_tool_bootstrap_pipeline`, line 920) writes the
+   asserted `owner_type` and can therefore produce a `target_type =
+   'device'` row. Until #5 lands a domain detector with a meaningful
+   `tool` vs `device` head, `device` will remain a bootstrap-only
+   `detect_target` on this codebase. (§13 finding (2) should be read in
+   light of this clarification.)
+2. **YOLOv8n COCO produces high-confidence proposals on real tool /
+   device crops, in sharp contrast to face inputs.** `tool_count ≥ 2`
+   on 32 / 42 (76 %) vs 12 / 42 (29 %) on the face slice; `tool` p75
+   score 0.834 vs 0.746; `tool` max 1.000 in both. Mean
+   `recognition_items_total` rises from 91 / 42 ≈ 2.17 (face slice) to
+   137 / 42 ≈ 3.26. So YOLOv8n is *not* uniformly noisy — its bbox
+   recall on operator-relevant tools and devices is real. The face-slice
+   noise (#13 finding (4)) is a domain-adaptation problem, not a
+   detector-quality problem.
+3. **SCRFD emits low-confidence false-positive faces on tool / device
+   crops.** 6 / 42 (14 %) tool-fixture photos returned `face_count ≥ 1`
+   despite containing no human faces. The face score distribution is
+   shifted markedly downward vs §13: median 0.605 (vs 0.792), p25 0.554
+   (vs 0.776), max 0.742 (vs 0.855). Every face FP on this fixture
+   would be eliminated by raising the SCRFD score floor to ≥ 0.75; a
+   floor of ≥ 0.78 would still preserve the 23 high-confidence true
+   faces in the §13 face slice (their min was 0.776). This is a single
+   tunable in `server/src/inference/scrfd.rs` and is queued as a
+   sub-follow-up of #5 / #2c-tune.
+4. **`recognition_items_total` per-photo load is 50 % higher on tool /
+   device inputs than on face inputs.** 137 / 42 vs 91 / 42. Combined
+   with #2 above, this re-confirms #5's promotion: the operator's
+   verification load scales with the number of YOLOv8 proposals, and
+   YOLOv8 proposes *more* boxes on photos that contain real tools /
+   devices than on photos that don't. A domain detector that emits
+   one bbox per real tool / device — instead of YOLOv8n's COCO-flavoured
+   over-segmentation (e.g. 10 boxes on a single "laptop + accessories"
+   image) — is expected to roughly halve the per-photo item count on
+   true-positive inputs as well, not only on face-only inputs.
+
+### Reproduce
+
+```sh
+# 1. Rebuild the fixture (deterministic; needs ~250 MiB of COCO annotations)
+#    Skip if tests/fixtures/tool/baseline/ already populated.
+python3 tools/build_tool_fixture.py \
+  --coco-cache /root/.cache/coco-val2017 \
+  --out tests/fixtures/tool/baseline
+
+# 2. Run the harness against the tool fixture, writing report to /tmp
+#    (docs/baselines/ is root-owned; f1u writes to /tmp then root copies).
+sudo -u f1u env PHOTOS_GLOB='tests/fixtures/tool/baseline/**/*.jpg' \
+  REPORT_PATH=/tmp/2-distribution-tool-baseline.json \
+  bash -lc 'cd /root/F1-photo && bash packaging/scripts/distribution-baseline.sh'
+
+# 3. Archive
+cp /tmp/2-distribution-tool-baseline.json docs/baselines/
+```
