@@ -1,0 +1,25 @@
+{
+  "$schema_comment": "Provenance + integrity manifest for tests/fixtures/face/. Updated by hand whenever a fixture file is regenerated. The smoke script does NOT consume this file directly; it is documentation for humans reviewing diffs.",
+  "fixtures": [
+    {
+      "file": "portrait_001.jpg",
+      "size_bytes": 66489,
+      "sha256": "74139dcfd87ccd42855a9e35bcd6df9d08640d041f77d29115e381bdebf60a59",
+      "width": 512,
+      "height": 512,
+      "format": "JPEG",
+      "color_mode": "RGB",
+      "jpeg_quality": 90,
+      "source": "skimage.data.astronaut() (NASA portrait of astronaut Eileen Collins)",
+      "source_kind": "public_domain_real_face",
+      "depicts_real_person": true,
+      "fetched_at": "2026-04-27",
+      "transform": "PIL.Image.fromarray(skimage.data.astronaut(), 'RGB'); save JPEG quality=90 optimize=True progressive=False",
+      "license": "public domain (work of NASA / U.S. Federal government employee, 17 U.S.C. \u00a7105). Bundled with scikit-image as skimage.data.astronaut.",
+      "used_by": [
+        "packaging/scripts/smoke-e2e.sh"
+      ],
+      "used_for": "milestone #2b smoke: owner-known person bootstrap seeds gallery; the same image re-uploaded as wo_raw in a second project must hit the matched bucket via face embedding similarity."
+    }
+  ]
+}

@@ -301,6 +301,186 @@ echo "✓ recognition_items row written by worker (real ONNX pipeline executed)"
 # is allowed below (we tighten the WARN whitelist now that DINOv2 is wired),
 # the smoke proves the real pipeline ran for this photo end-to-end.
 
+# =====================================================================
+# Milestone #2b: owner-known person bootstrap seeds the gallery, and a
+# wo_raw upload of the same face in a different project hits the matched
+# bucket via cross-project recall.
+#
+# Flow (using tests/fixtures/face/portrait_001.jpg, a synthetic StyleGAN
+# face committed into the repo):
+#   1. POST /api/persons -> person P (employee_no=E-FACE-001).
+#   2. POST /api/projects/$PROJECT_ID/photos with owner_type=person,
+#      owner_id=<P>, file=portrait_001.jpg.
+#      The worker bootstrap path (worker::run_face_bootstrap_pipeline,
+#      milestone #2a) must:
+#        - finalize the photo as 'matched',
+#        - write >=1 detections row with matched_owner_id=<P>, score=1.0,
+#        - write >=1 identity_embeddings row with source='initial',
+#          owner_type='person', owner_id=<P>,
+#        - NOT write any recognition_items rows for this photo.
+#   3. Create project B (smk-002) so the (project_id, hash) UNIQUE
+#      constraint on photos doesn't dedupe step 4.
+#   4. POST /api/projects/$PROJECT2_ID/photos with owner_type=wo_raw,
+#      same fixture file. The standard SCRFD+ArcFace+recall pipeline
+#      must:
+#        - finalize the photo as 'matched',
+#        - write >=1 detections row with matched_owner_id=<P>,
+#        - write >=1 recognition_items row with status='matched' and
+#          a detection that points back to <P>.
+# Identity_embeddings is workspace-global (recall::top1_face filters only
+# on owner_type), so the seed written from project A is visible from
+# project B — that is the whole point of milestone #2a.
+# =====================================================================
+FACE_FIXTURE="$ROOT/tests/fixtures/face/portrait_001.jpg"
+[[ -f "$FACE_FIXTURE" ]] || {
+    echo "✗ face fixture missing: $FACE_FIXTURE" >&2
+    echo "  see tests/fixtures/face/README.md for how to regenerate." >&2
+    exit 1
+}
+
+# psql wrapper for direct DB assertions against the bundled-pg.
+PSQL_BIN="$ROOT/bundled-pg/bin/psql"
+psql_scalar() {
+    # $1 = sql; prints a single scalar (-At) on stdout.
+    PGPASSWORD=smokepwd "$PSQL_BIN" \
+        -h 127.0.0.1 -p "$PG_PORT" -U f1photo -d f1photo_prod \
+        -At -v ON_ERROR_STOP=1 -c "$1"
+}
+
+wait_queue_drain() {
+    # $1 = label for log output. Reuses the 30s budget of the existing
+    # drain loop, on the same admin endpoint.
+    local label="$1"
+    local ok=0
+    for i in $(seq 1 30); do
+        curl -sS -o "$WORK_DIR/last.body" "$BASE/api/admin/queue/stats" -H "$AUTH_H"
+        local qp ql pp
+        qp="$(jq_get "['queue_pending']")"
+        ql="$(jq_get "['queue_locked']")"
+        pp="$(jq_get "['photo_processing']")"
+        if [[ "$qp" == "0" && "$ql" == "0" && "$pp" == "0" ]]; then
+            ok=1
+            break
+        fi
+        sleep 1
+    done
+    if [[ $ok -ne 1 ]]; then
+        echo "✗ $label: queue did not drain in 30s" >&2
+        cat "$WORK_DIR/last.body" >&2 ; echo >&2
+        tail -80 "$LOG" >&2
+        exit 1
+    fi
+    echo "✓ $label: queue drained"
+}
+
+echo "▶ #2b: create person for bootstrap test"
+assert_http 201 POST "$BASE/api/persons" -H "$AUTH_H" -H 'content-type: application/json' \
+    -d '{"employee_no":"E-FACE-001","name":"Bootstrap Test Face"}'
+PERSON_ID="$(jq_get "['id']")"
+echo "  person_id=$PERSON_ID"
+
+echo "▶ #2b: upload fixture as owner_type=person (gallery seed)"
+assert_http 202 POST "$BASE/api/projects/$PROJECT_ID/photos" -H "$AUTH_H" \
+    -F "file=@$FACE_FIXTURE;type=image/jpeg" \
+    -F "owner_type=person" \
+    -F "owner_id=$PERSON_ID"
+SEED_PHOTO_ID="$(jq_get "['id']")"
+echo "  seed_photo_id=$SEED_PHOTO_ID"
+
+wait_queue_drain "#2b seed"
+
+echo "▶ #2b: seed photo terminal status must be 'matched'"
+assert_http 200 GET "$BASE/api/projects/$PROJECT_ID/photos/$SEED_PHOTO_ID" -H "$AUTH_H"
+SEED_STATUS="$(jq_get "['status']")"
+if [[ "$SEED_STATUS" != "matched" ]]; then
+    echo "✗ seed photo status: expected matched, got '$SEED_STATUS'" >&2
+    echo "  this means the bootstrap path either failed or SCRFD found 0 faces in the fixture." >&2
+    tail -120 "$LOG" >&2
+    exit 1
+fi
+echo "  ✓ seed photo status=matched"
+
+echo "▶ #2b: identity_embeddings has >=1 'initial' row for person"
+INIT_COUNT="$(psql_scalar "SELECT count(*) FROM identity_embeddings WHERE owner_type='person' AND owner_id='$PERSON_ID' AND source='initial'")"
+if [[ -z "$INIT_COUNT" || "$INIT_COUNT" -lt 1 ]]; then
+    echo "✗ identity_embeddings 'initial' rows for $PERSON_ID = '$INIT_COUNT', expected >=1" >&2
+    echo "  bootstrap path did not seed the gallery; recall layer will never hit." >&2
+    tail -120 "$LOG" >&2
+    exit 1
+fi
+echo "  ✓ identity_embeddings 'initial' rows: $INIT_COUNT"
+
+echo "▶ #2b: detections has >=1 matched row for seed photo"
+SEED_DET_MATCHED="$(psql_scalar "SELECT count(*) FROM detections WHERE photo_id='$SEED_PHOTO_ID' AND match_status='matched' AND matched_owner_type='person' AND matched_owner_id='$PERSON_ID'")"
+if [[ -z "$SEED_DET_MATCHED" || "$SEED_DET_MATCHED" -lt 1 ]]; then
+    echo "✗ seed photo detections matched rows = '$SEED_DET_MATCHED', expected >=1" >&2
+    exit 1
+fi
+echo "  ✓ seed photo detections matched rows: $SEED_DET_MATCHED"
+
+echo "▶ #2b: owner-known seed must NOT produce recognition_items rows"
+SEED_RI="$(psql_scalar "SELECT count(*) FROM recognition_items WHERE photo_id='$SEED_PHOTO_ID'")"
+if [[ "$SEED_RI" != "0" ]]; then
+    echo "✗ owner-known seed wrote $SEED_RI recognition_items rows, expected 0" >&2
+    echo "  seeds are gallery-fill only; they must not appear in the wo_raw recognition queue UI." >&2
+    exit 1
+fi
+echo "  ✓ no recognition_items rows for seed photo"
+
+echo "▶ #2b: create project B (smk-002) for cross-project wo_raw test"
+assert_http 201 POST "$BASE/api/projects" -H "$AUTH_H" -H 'content-type: application/json' \
+    -d '{"code":"smk-002","name":"Smoke Test Project B (matched bucket)","icon":"🔥","description":"e2e #2b"}'
+PROJECT2_ID="$(jq_get "['id']")"
+echo "  project2_id=$PROJECT2_ID"
+
+assert_http 201 POST "$BASE/api/projects/$PROJECT2_ID/work_orders" -H "$AUTH_H" \
+    -H 'content-type: application/json' \
+    -d '{"code":"WO-SMK-2","title":"smoke wo b"}'
+WO2_ID="$(jq_get "['id']")"
+echo "  wo2_id=$WO2_ID"
+
+echo "▶ #2b: upload SAME fixture as wo_raw in project B"
+assert_http 202 POST "$BASE/api/projects/$PROJECT2_ID/photos" -H "$AUTH_H" \
+    -F "file=@$FACE_FIXTURE;type=image/jpeg" \
+    -F "owner_type=wo_raw" \
+    -F "wo_id=$WO2_ID" \
+    -F "angle=front"
+WORAW_PHOTO_ID="$(jq_get "['id']")"
+echo "  wo_raw_photo_id=$WORAW_PHOTO_ID"
+
+wait_queue_drain "#2b wo_raw"
+
+echo "▶ #2b: wo_raw photo terminal status must be 'matched' (recall hit)"
+assert_http 200 GET "$BASE/api/projects/$PROJECT2_ID/photos/$WORAW_PHOTO_ID" -H "$AUTH_H"
+WORAW_STATUS="$(jq_get "['status']")"
+if [[ "$WORAW_STATUS" != "matched" ]]; then
+    echo "✗ wo_raw photo status: expected matched, got '$WORAW_STATUS'" >&2
+    echo "  recall layer did not hit the seed. Check ArcFace embedding quality / threshold (Thresholds::DEFAULT match_lower=0.62)." >&2
+    tail -120 "$LOG" >&2
+    exit 1
+fi
+echo "  ✓ wo_raw photo status=matched"
+
+echo "▶ #2b: detections has >=1 matched row pointing at our person"
+WORAW_DET_MATCHED="$(psql_scalar "SELECT count(*) FROM detections WHERE photo_id='$WORAW_PHOTO_ID' AND match_status='matched' AND matched_owner_type='person' AND matched_owner_id='$PERSON_ID'")"
+if [[ -z "$WORAW_DET_MATCHED" || "$WORAW_DET_MATCHED" -lt 1 ]]; then
+    echo "✗ wo_raw detections matched rows for $PERSON_ID = '$WORAW_DET_MATCHED', expected >=1" >&2
+    echo "  the wo_raw photo did not match back to the seeded person." >&2
+    tail -120 "$LOG" >&2
+    exit 1
+fi
+echo "  ✓ wo_raw detections matched rows: $WORAW_DET_MATCHED"
+
+echo "▶ #2b: recognition_items has >=1 matched row for wo_raw photo"
+WORAW_RI_MATCHED="$(psql_scalar "SELECT count(*) FROM recognition_items WHERE photo_id='$WORAW_PHOTO_ID' AND status='matched'")"
+if [[ -z "$WORAW_RI_MATCHED" || "$WORAW_RI_MATCHED" -lt 1 ]]; then
+    echo "✗ wo_raw recognition_items matched rows = '$WORAW_RI_MATCHED', expected >=1" >&2
+    exit 1
+fi
+echo "  ✓ wo_raw recognition_items matched rows: $WORAW_RI_MATCHED"
+
+echo "✓ milestone #2b: bootstrap-then-recall flow proven end-to-end"
+
 echo "▶ master data: persons"
 assert_http 201 POST "$BASE/api/persons" -H "$AUTH_H" -H 'content-type: application/json' \
     -d '{"employee_no":"E-001","name":"Smoke Person"}'
