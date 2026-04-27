@@ -34,6 +34,19 @@
 //! 6. Bucket each detection (matched / learning / unmatched), insert
 //!    `recognition_items`, augment the gallery for `score >= 0.95`.
 //! 7. Update `photos.status` based on the aggregate of detections.
+//!
+//! Owner-known bootstrap (milestone #2a):
+//! When a photo is uploaded with `owner_type=person`, the worker takes a
+//! different path: SCRFD detect + ArcFace embed run as usual, but the
+//! resulting embeddings are written into `identity_embeddings` with
+//! `source='initial'` anchored to the asserted owner — and no recall, no
+//! `recognition_items`, no augment. This is the cold-start path that lets
+//! subsequent `wo_raw` uploads of the same person actually hit the gallery.
+//! Without this branch the gallery is permanently empty (the standard
+//! pipeline only emits `incremental` rows at score ≥ 0.95 and `manual` rows
+//! from corrected `recognition_items`). `tool`/`device` bootstrap is tracked
+//! as the follow-up milestone #2a-tool; for now those uploads still run the
+//! standard pipeline and log a warning that the gallery will not be seeded.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -333,18 +346,47 @@ async fn run_real_pipeline(state: &AppState, job: &Job) -> Result<Outcome> {
     // Resolve photo storage path. `photos.path` is stored as a relative path
     // (e.g. `photos/<project_id>/<prefix>/<hash>.jpg`); the data root lives
     // in `Config::data_dir`.
-    let photo_row = sqlx::query("SELECT path, project_id FROM photos WHERE id = $1")
-        .bind(job.photo_id)
-        .fetch_one(pool)
-        .await?;
+    let photo_row = sqlx::query(
+        "SELECT path, project_id, owner_type::text AS owner_type, owner_id \
+         FROM photos WHERE id = $1",
+    )
+    .bind(job.photo_id)
+    .fetch_one(pool)
+    .await?;
     let rel: String = photo_row.get("path");
     let project_id: Uuid = photo_row.get("project_id");
+    let owner_type: Option<String> = photo_row.get("owner_type");
+    let owner_id: Option<Uuid> = photo_row.get("owner_id");
     let full = std::path::Path::new(&state.config.data_dir).join(&rel);
 
     // Decode once and reuse for both face (640) and tool (224) sub-pipelines.
     let img = preprocess::decode_path(&full)?;
     let src_w = img.width();
     let src_h = img.height();
+
+    // Owner-known bootstrap (milestone #2a). See module doc for rationale.
+    if let (Some(ot), Some(oid)) = (owner_type.as_deref(), owner_id) {
+        match ot {
+            "person" => {
+                let buckets =
+                    run_face_bootstrap_pipeline(state, job, &img, src_w, src_h, project_id, oid)
+                        .await?;
+                return Ok(aggregate_outcome(&buckets));
+            }
+            "tool" | "device" => {
+                tracing::warn!(
+                    photo_id = %job.photo_id,
+                    owner_type = ot,
+                    owner_id = %oid,
+                    "tool/device bootstrap path not yet implemented; running \
+                     standard pipeline — gallery will NOT be seeded by this \
+                     upload (milestone #2a-tool tracks this follow-up)"
+                );
+                // fall through to standard pipeline below
+            }
+            _ => {} // wo_raw — handled by standard pipeline below
+        }
+    }
 
     let mut buckets: Vec<recall::Bucket> = Vec::new();
 
@@ -564,6 +606,184 @@ async fn run_face_pipeline(
         }
         buckets.push(bucket);
     }
+
+    Ok(buckets)
+}
+
+/// Owner-known person photo bootstrap (milestone #2a).
+///
+/// When a photo is uploaded asserting `owner_type=person owner_id=<P>`, this
+/// pipeline replaces the standard recall path. SCRFD detect and ArcFace embed
+/// run as usual, but each face is *seeded* into `identity_embeddings` with
+/// `source='initial'` anchored to `<P>` — and no recall, no
+/// `recognition_items`, no augment. The detection row is still written so
+/// that the audit trail / per-photo face boxes remain available, but it is
+/// stamped `match_status='matched'` against the asserted owner with
+/// `matched_score=1.0` (the uploader, not inference, is the source of truth).
+///
+/// All detected faces are attributed to the same owner. This matches the
+/// upload's intent (a "this is person X" registration shot is expected to
+/// contain X's face) and is the v1 simplification we want; richer
+/// disambiguation (e.g. choose the largest face only, or reject multi-face
+/// uploads outright) can come later if the false-seed rate becomes a problem.
+///
+/// Photos with zero detected faces log a warning and write nothing to
+/// `identity_embeddings` — the upload itself still succeeded; it just didn't
+/// produce a usable seed.
+#[allow(clippy::too_many_arguments)]
+async fn run_face_bootstrap_pipeline(
+    state: &AppState,
+    job: &Job,
+    img: &image::DynamicImage,
+    src_w: u32,
+    src_h: u32,
+    project_id: Uuid,
+    owner_id: Uuid,
+) -> Result<Vec<recall::Bucket>> {
+    let pool = &state.db;
+    let det_session = state
+        .models
+        .get(ModelKind::FaceDetect)
+        .ok_or_else(|| anyhow!("FaceDetect session not loaded"))?;
+    let emb_session = state
+        .models
+        .get(ModelKind::FaceEmbed)
+        .ok_or_else(|| anyhow!("FaceEmbed session not loaded"))?;
+
+    // SCRFD preprocess: letterbox to a fixed 640×640 + Norm::Scrfd.
+    let (canvas, lb) = preprocess::letterbox(img, scrfd::INPUT_SIZE);
+    let nchw = preprocess::to_nchw(&canvas, preprocess::Norm::Scrfd);
+    let dims = nchw.shape().to_vec();
+    let data: Vec<f32> = nchw.iter().copied().collect();
+    let input_tensor = ort::value::Tensor::from_array((dims, data))?;
+    let det_outputs = det_session.run(ort::inputs![input_tensor]?)?;
+
+    let out_names: Vec<String> = det_session.outputs.iter().map(|o| o.name.clone()).collect();
+    if out_names.len() != 9 {
+        return Err(anyhow!(
+            "SCRFD expected 9 outputs, got {}: {:?}",
+            out_names.len(),
+            out_names
+        ));
+    }
+    let mut flat: Vec<Vec<f32>> = Vec::with_capacity(9);
+    for name in &out_names {
+        let view = det_outputs[name.as_str()].try_extract_tensor::<f32>()?;
+        flat.push(view.iter().copied().collect());
+    }
+
+    let dets = scrfd::decode_outputs(
+        [&flat[0], &flat[1], &flat[2]],
+        [&flat[3], &flat[4], &flat[5]],
+        [&flat[6], &flat[7], &flat[8]],
+        lb,
+        src_w,
+        src_h,
+    )?;
+
+    tracing::info!(
+        job_id = job.id,
+        photo_id = %job.photo_id,
+        owner_id = %owner_id,
+        face_count = dets.len(),
+        "SCRFD detected faces (owner-known bootstrap path)"
+    );
+
+    if dets.is_empty() {
+        tracing::warn!(
+            photo_id = %job.photo_id,
+            owner_id = %owner_id,
+            "owner-known person photo had zero detected faces; nothing seeded into identity_embeddings"
+        );
+        return Ok(Vec::new());
+    }
+
+    let mut buckets: Vec<recall::Bucket> = Vec::with_capacity(dets.len());
+
+    for det in &dets {
+        // ArcFace per-face: 112×112 tight crop + Norm::ArcFace.
+        let nchw = preprocess::crop_to_nchw(img, det.bbox, 112, preprocess::Norm::ArcFace);
+        let dims = nchw.shape().to_vec();
+        let data: Vec<f32> = nchw.iter().copied().collect();
+        let face_input = ort::value::Tensor::from_array((dims, data))?;
+        let emb_outputs = emb_session.run(ort::inputs![face_input]?)?;
+
+        let emb_out_name = emb_session
+            .outputs
+            .first()
+            .ok_or_else(|| anyhow!("FaceEmbed has no outputs"))?
+            .name
+            .clone();
+        let view = emb_outputs[emb_out_name.as_str()].try_extract_tensor::<f32>()?;
+        let mut emb: Vec<f32> = view.iter().copied().collect();
+        if emb.is_empty() {
+            return Err(anyhow!("ArcFace produced an empty embedding"));
+        }
+        recall::l2_normalize(&mut emb);
+        if emb.len() != 512 {
+            tracing::warn!(
+                emb_dim = emb.len(),
+                "ArcFace embedding is not 512-d; adapting to schema width via pad_to_512"
+            );
+            emb = recall::pad_to_512(&emb);
+        }
+
+        // Persist detection row anchored directly to the asserted owner.
+        // matched_score=1.0 because the uploader, not inference, asserts the
+        // owner; this keeps the audit trail consistent with how downstream
+        // tooling reads `detections.match_status`.
+        let bbox_json = serde_json::json!({
+            "x1": det.bbox.0,
+            "y1": det.bbox.1,
+            "x2": det.bbox.2,
+            "y2": det.bbox.3,
+            "kps": det.kps.iter().map(|(x, y)| serde_json::json!([*x, *y])).collect::<Vec<_>>(),
+            "source": "scrfd",
+        });
+        let v_pg = recall::encode_vector(&emb);
+        sqlx::query(
+            "INSERT INTO detections \
+             (project_id, photo_id, target_type, bbox, score, embedding, \
+              match_status, matched_owner_type, matched_owner_id, matched_score) \
+             VALUES ($1, $2, 'face'::detect_target, $3, $4, $5::vector, \
+                     'matched'::match_status, 'person'::owner_type, $6, $7)",
+        )
+        .bind(project_id)
+        .bind(job.photo_id)
+        .bind(&bbox_json)
+        .bind(det.score)
+        .bind(&v_pg)
+        .bind(owner_id)
+        .bind(1.0_f32)
+        .execute(pool)
+        .await?;
+
+        // Seed the gallery: an `'initial'` row anchored to this person. This
+        // is the cold-start identity_embeddings write that the rest of the
+        // pipeline depends on for matched/learning to ever fire on later
+        // wo_raw uploads of the same person.
+        sqlx::query(
+            "INSERT INTO identity_embeddings \
+             (owner_type, owner_id, embedding, source, source_photo, source_project) \
+             VALUES ('person'::owner_type, $1, $2::vector, 'initial'::embedding_source, $3, $4)",
+        )
+        .bind(owner_id)
+        .bind(&v_pg)
+        .bind(job.photo_id)
+        .bind(project_id)
+        .execute(pool)
+        .await?;
+
+        buckets.push(recall::Bucket::Matched);
+    }
+
+    tracing::info!(
+        job_id = job.id,
+        photo_id = %job.photo_id,
+        owner_id = %owner_id,
+        faces_seeded = buckets.len(),
+        "owner-known person photo seeded gallery as 'initial'"
+    );
 
     Ok(buckets)
 }
