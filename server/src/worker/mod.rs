@@ -49,6 +49,15 @@
 //! DINOv2-small embeds each crop, and the per-crop embeddings are seeded
 //! into `identity_embeddings` with `source='initial'` anchored to the
 //! asserted owner — no recall, no `recognition_items`, no augment.
+//!
+//! Class collapse (milestone #5-skel):
+//! `detections.target_type` is normalised to `'tool'` regardless of
+//! whether the uploader asserted `tool` or `device`. The single non-face
+//! detector class keeps recognition queries uniform and is the contract
+//! that milestone #7's `retrain-detector` CLI consumes via
+//! `v_training_corrections`. The caller's `owner_type` is still
+//! preserved on `identity_embeddings.owner_type` and
+//! `matched_owner_type` for traceability and master-data routing.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -778,6 +787,11 @@ async fn run_face_bootstrap_pipeline(
 /// `target_type` mirrors `owner_type` per the `detect_target` enum:
 /// `'tool'` for tool owners, `'device'` for device owners.
 ///
+/// (milestone #5-skel) `target_type` is now hard-coded to `'tool'`
+/// regardless of caller. The class collapse keeps recognition queries
+/// uniform; `matched_owner_type` and `identity_embeddings.owner_type`
+/// still mirror the caller for traceability + gallery routing.
+///
 /// Photos with zero proposed boxes log a warning and write nothing — the
 /// upload itself still succeeded; it just didn't produce a usable seed.
 /// Unlike [`run_tool_pipeline`] there is *no* whole-image fallback: that
@@ -886,17 +900,19 @@ async fn run_tool_bootstrap_pipeline(
         let v_pg = recall::encode_vector(&emb_512);
 
         // Persist detection row anchored directly to the asserted owner.
-        // target_type mirrors owner_type per the detect_target enum.
+        // target_type is hard-coded to 'tool' (milestone #5-skel:
+        // detector class collapse). matched_owner_type still mirrors the
+        // caller's owner_type so the master-data routing back to
+        // tools/devices tables is preserved.
         sqlx::query(
             "INSERT INTO detections \
              (project_id, photo_id, target_type, bbox, score, embedding, \
               match_status, matched_owner_type, matched_owner_id, matched_score) \
-             VALUES ($1, $2, $3::detect_target, $4, $5, $6::vector, \
-                     'matched'::match_status, $7::owner_type, $8, $9)",
+             VALUES ($1, $2, 'tool'::detect_target, $3, $4, $5::vector, \
+                     'matched'::match_status, $6::owner_type, $7, $8)",
         )
         .bind(project_id)
         .bind(job.photo_id)
-        .bind(owner_type)
         .bind(&bbox_json)
         .bind(det.score)
         .bind(&v_pg)
