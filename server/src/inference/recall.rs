@@ -32,10 +32,26 @@ pub struct Thresholds {
 }
 
 impl Thresholds {
-    /// Project defaults from the long-term instructions.
+    /// Project defaults.
+    ///
+    /// History:
+    /// - {0.50, 0.62, 0.95} were the original "long-term instructions"
+    ///   defaults inherited from M2 turn 10.
+    /// - Milestone #2c (commit ea6e8eb) drove a Western-bucket P/R sweep on
+    ///   the 8-enrolled-+-2-distractor LFW slice and showed that on real
+    ///   ArcFace + SCRFD scores the original `match_lower=0.62` left F1
+    ///   stuck at 0.222 (P=1.0, R=0.125) because most enrolled queries
+    ///   landed in the 0.40–0.55 score range. The same sweep located the
+    ///   F1 maximum at `match_lower=0.40`.
+    /// - Milestone #2c-tune (this commit) lowers `match_lower` to 0.40 and
+    ///   `low_lower` to 0.30 to keep the learning band the same width and
+    ///   to avoid clipping any score that previously bucketed as Learning.
+    ///   `augment_upper` is left at 0.95 because no enrolled query in the
+    ///   #2c sweep crossed it; lowering it would risk gallery contamination
+    ///   and is best deferred until #2c-asia widens the dataset.
     pub const DEFAULT: Self = Self {
-        low_lower: 0.50,
-        match_lower: 0.62,
+        low_lower: 0.30,
+        match_lower: 0.40,
         augment_upper: 0.95,
     };
 }
@@ -237,11 +253,13 @@ mod tests {
             owner_id: Uuid::nil(),
             score: s,
         };
+        // Defaults post-#2c-tune: low_lower=0.30, match_lower=0.40,
+        // augment_upper=0.95.
         assert_eq!(mk(0.95).bucket(t), Bucket::Matched);
-        assert_eq!(mk(0.62).bucket(t), Bucket::Matched);
-        assert_eq!(mk(0.61).bucket(t), Bucket::Learning);
-        assert_eq!(mk(0.50).bucket(t), Bucket::Learning);
-        assert_eq!(mk(0.49).bucket(t), Bucket::Unmatched);
+        assert_eq!(mk(0.40).bucket(t), Bucket::Matched);
+        assert_eq!(mk(0.39).bucket(t), Bucket::Learning);
+        assert_eq!(mk(0.30).bucket(t), Bucket::Learning);
+        assert_eq!(mk(0.29).bucket(t), Bucket::Unmatched);
         assert_eq!(mk(0.0).bucket(t), Bucket::Unmatched);
     }
 

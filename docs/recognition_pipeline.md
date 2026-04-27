@@ -267,6 +267,78 @@ sudo -u f1u bash -lc 'cd /root/F1-photo && bash packaging/scripts/recognition-pr
 # Archived run at docs/baselines/2c-recognition-pr.json
 ```
 
+## 12.5 Post-tune Precision / Recall (milestone #2c-tune — 2026-04-27 Asia/Shanghai)
+
+`Thresholds::DEFAULT` was lowered from `{ low_lower=0.50, match_lower=0.62,
+augment_upper=0.95 }` to `{ low_lower=0.30, match_lower=0.40,
+augment_upper=0.95 }` — landing the recommendation that #2c documented as a
+follow-up. The change is a single 3-field const in
+`server/src/inference/recall.rs::Thresholds::DEFAULT`; downstream call sites
+(`worker/mod.rs:452,1008`) consume the const directly so no other server code
+changed.
+
+The tuned default is the conservative end of the #2c sweep: `match_lower=0.40`
+is the lowest point at which **precision stays at 1.0** on this fixture
+(distractor max top1 = 0.261, leaving a 0.14 safety margin). Lower thresholds
+(0.30 / 0.35) yield higher recall but introduce the first distractor false
+positive, so we keep them out of the default and revisit only after
+#2c-asia widens the dataset.
+
+`augment_upper` is left at 0.95 because no enrolled query in the #2c sweep
+crossed it on this fixture; lowering it would risk gallery contamination on
+borderline-correct matches and is best deferred until a higher-recall dataset
+can size the augmentation FP rate.
+
+### Re-run on the same 42-photo fixture (post-tune)
+
+| bucket      | n  | face_det_rate | TP | FP | FN | TN | P    | R     | F1     |
+| ----------- | -- | ------------- | -- | -- | -- | -- | ---- | ----- | ------ |
+| Western     | 20 | **1.0**       | 8  | 0  | 8  | 4  | 1.0  | 0.500 | **0.667** |
+| Eastern     | 10 | **0.0**       | 0  | 0  | 8  | 2  | n/a  | 0.0   | n/a    |
+| **overall** | 30 | 0.667         | 8  | 0  | 16 | 6  | 1.0  | 0.333 | **0.500** |
+
+Compared to §12 (pre-tune `match_lower=0.62`): TP 2 → 8, Western recall
+0.125 → 0.500 (4×), Western F1 0.222 → 0.667 (3×); precision unchanged at 1.0.
+Eastern bucket is unchanged (still bottlenecked at SCRFD detection;
+queued under #2c-asia).
+
+### Extended threshold sweep (overall, low_lower=0.30 floor)
+
+| match_lower    | TP | FP | FN | TN | P     | R     | F1        |
+| -------------- | -- | -- | -- | -- | ----- | ----- | --------- |
+| 0.30           | 13 | 1  | 11 | 6  | 0.929 | 0.542 | 0.684     |
+| 0.35           | 10 | 1  | 14 | 6  | 0.909 | 0.417 | 0.571     |
+| **0.40 (new default)** | 8 | 0 | 16 | 6 | **1.0** | **0.333** | **0.500** |
+| 0.45           | 7  | 0  | 17 | 6  | 1.0   | 0.292 | 0.452     |
+| 0.50           | 6  | 0  | 18 | 6  | 1.0   | 0.250 | 0.400     |
+| 0.55           | 3  | 0  | 21 | 6  | 1.0   | 0.125 | 0.222     |
+| 0.60           | 2  | 0  | 22 | 6  | 1.0   | 0.083 | 0.154     |
+| 0.62 (old default) | 2 | 0 | 22 | 6 | 1.0 | 0.083 | 0.154     |
+| 0.65           | 2  | 0  | 22 | 6  | 1.0   | 0.083 | 0.154     |
+| 0.70           | 0  | 0  | 24 | 6  | n/a   | 0.0   | n/a       |
+
+The 0.30 / 0.35 rows show the cost of going below the new default: each step
+introduces +1 FP from the same single Western distractor whose top1 = 0.261
+(within `[0.30, 0.40)`). Holding at 0.40 keeps the default zero-FP and
+still triples TP vs the original.
+
+### Tarball repack
+
+Server source change → `dist/f1photo-0.1.0-linux-aarch64.tar.gz` repacked.
+Post-#2c-tune: md5 `36df9b35cc51b47a1ada400be3b7324f` / sha256
+`36df9b35cc51b47a1ada400be3b7324f1196fe285e2ce3122ffefd9157573bc2` /
+134,441,471 B. Smoke (via the recognition-pr-baseline.sh harness, which
+exercises the same server boot + bundled-pg + bootstrap-admin + /healthz +
+queue-drain path as `smoke-e2e.sh`) ✓ PASSED end-to-end against the new
+tarball.
+
+### Reproduce
+
+```sh
+sudo -u f1u bash -lc 'cd /root/F1-photo && REPORT_PATH=/tmp/pr-baseline-2c-tune.json bash packaging/scripts/recognition-pr-baseline.sh'
+# Archived run at docs/baselines/2c-tune-recognition-pr.json
+```
+
 ## 13. Real-dataset distribution baseline (milestone #2 — face slice)
 
 Milestone #2 (`real-dataset smoke baseline`) measures the *shape* of what

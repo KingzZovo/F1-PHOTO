@@ -319,8 +319,11 @@ def main() -> int:
             "matched_score": score,
         })
 
-    # 6) Compute P/R at server's actual Thresholds::DEFAULT
-    DEFAULT = (0.50, 0.62)  # mirrors Thresholds::DEFAULT { low_lower, match_lower }
+    # 6) Compute P/R at server's actual Thresholds::DEFAULT.
+    # NOTE: keep this tuple in sync with server/src/inference/recall.rs
+    # `Thresholds::DEFAULT { low_lower, match_lower, augment_upper }`.
+    # Updated for milestone #2c-tune: was (0.50, 0.62), now (0.30, 0.40).
+    DEFAULT = (0.30, 0.40)  # mirrors Thresholds::DEFAULT { low_lower, match_lower }
 
     @dataclass
     class PerPhoto:
@@ -390,15 +393,18 @@ def main() -> int:
     western = compute_pr([s for s in per_photo if s.bucket == "western"], *DEFAULT)
     eastern = compute_pr([s for s in per_photo if s.bucket == "eastern"], *DEFAULT)
 
-    # Threshold sweep
-    sweep_match_lower = [0.40, 0.45, 0.50, 0.55, 0.60, 0.62, 0.65, 0.70, 0.75, 0.80]
+    # Threshold sweep. Pin low_lower at the new 0.30 floor (matching the
+    # post-#2c-tune default) and walk match_lower up. Lower endpoints (0.30,
+    # 0.35) are added so the sweep brackets the new default symmetrically.
+    sweep_match_lower = [0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60, 0.62, 0.65, 0.70, 0.75, 0.80]
+    sweep_low_floor = DEFAULT[0]
     sweep = []
     for ml in sweep_match_lower:
-        ll = min(0.50, ml)  # keep low_lower <= match_lower; report at default 0.50 floor
+        ll = min(sweep_low_floor, ml)  # keep low_lower <= match_lower
         sweep.append(compute_pr(per_photo, ll, ml))
 
     report = {
-        "milestone": "#2c face recognition P/R baseline",
+        "milestone": "#2c-tune face recognition P/R at retuned Thresholds::DEFAULT",
         "thresholds_default": {"low_lower": DEFAULT[0], "match_lower": DEFAULT[1], "augment_upper": 0.95},
         "manifest_path": str(manifest_path.relative_to(repo_root)),
         "project_id": project_id, "wo_id": wo_id,
@@ -426,12 +432,12 @@ def main() -> int:
     Path(args.report_path).write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n")
     print(f"[eval_pr] wrote report to {args.report_path}")
 
-    print("\n=== SUMMARY (Thresholds::DEFAULT low=0.50 match=0.62) ===")
+    print(f"\n=== SUMMARY (Thresholds::DEFAULT low={DEFAULT[0]:.2f} match={DEFAULT[1]:.2f}) ===")
     for label, blk in ("overall", overall), ("western", western), ("eastern", eastern):
         print(f"  {label:8} n={blk['n']:>2}  P={blk['precision']}  R={blk['recall']}  F1={blk['f1']}"
               f"  TP={blk['tp']} FP={blk['fp']} FN={blk['fn']} TN={blk['tn']}"
               f"  face_det_rate={blk['face_detection_rate']}")
-    print("\n=== THRESHOLD SWEEP (low_lower fixed at 0.50 floor) ===")
+    print(f"\n=== THRESHOLD SWEEP (low_lower fixed at {sweep_low_floor:.2f} floor) ===")
     print("  match_lower  P        R        F1       TP  FP  FN  TN")
     for s in sweep:
         print(f"  {s['match_lower']:.2f}         {s['precision']!s:<8} {s['recall']!s:<8} {s['f1']!s:<8} "
