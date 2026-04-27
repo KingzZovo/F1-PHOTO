@@ -282,9 +282,9 @@ esac
 # out and we fall back to `unmatched` without any per-photo detection trail.
 # If the real pipeline errors out, the worker marks the photo `unmatched`
 # WITHOUT inserting any detection / recognition_items row, so total=0 here
-# → this assertion catches that silent regression. (Operators who opt back
-# into the stub-fallback path via F1P_INFERENCE_STUB_FALLBACK=1 at runtime
-# see the same shape.)
+# → this assertion catches that silent regression. (As of milestone #1c
+# the env-gated stub-fallback branch has been removed entirely; pipeline
+# errors now bubble up to record_failure / queue retry.)
 echo "▶ recognition: at least one recognition_items row exists for the uploaded photo"
 assert_http 200 GET "$BASE/api/projects/$PROJECT_ID/recognition_items?photo_id=$PHOTO_ID&page_size=5" -H "$AUTH_H"
 RI_TOTAL="$(jq_get "['total']")"

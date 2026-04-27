@@ -66,18 +66,20 @@ stub Identity graph (not on the critical recognition path).
      `recognition_items.total >= 1` continues to hold.
   4. Per-photo outcome aggregates the best bucket across all detections
      (face + tool): Matched > Learning > Unmatched.
-- `F1P_INFERENCE_STUB_FALLBACK` now defaults **off** in the worker
-  (`stub_fallback_enabled()` returns `false` when the env var is unset).
-  Real-pipeline `Err`s surface as queue retries and eventually photo
-  `failed` after `MAX_ATTEMPTS=5`. As of milestone #1 (commit 1827b56)
-  `packaging/scripts/smoke-e2e.sh` no longer exports the env either, so
-  smoke runs against the same default-OFF posture that production
-  deployments will see; `grep -r F1P_INFERENCE_STUB_FALLBACK` over the
-  repo finds only the worker code that reads it and the doc references
-  that explain it — no in-tree manifest sets it. Operators may still
-  opt back in at runtime by exporting `F1P_INFERENCE_STUB_FALLBACK=1`
-  if a rollout-window mishap forces a manual recovery; the WARN line
-  and `Outcome::Unmatched` mapping are still in place for that path.
+- `F1P_INFERENCE_STUB_FALLBACK` and the `stub_fallback_enabled()` helper
+  have been **removed** as of milestone #1c. The cut-over chain was:
+  Step C flipped the default to OFF, milestone #1 (#1a + #1b, commit
+  1827b56) dropped the env export from smoke and confirmed no
+  in-tree manifest sets it, and milestone #1c finally deleted the
+  worker-side branch outright now that the real-dataset baselines
+  (#2 face slice + #2-tool tool/device slice) have landed and we are
+  confident the real ONNX pipeline is healthy. Real-pipeline `Err`s
+  always bubble up to `record_failure` / queue retry, eventually
+  marking the photo `failed` after `MAX_ATTEMPTS=5`. There is no
+  longer any code path that silently downgrades a pipeline error to
+  `Outcome::Unmatched`; if an operator hits a rollout-window mishap
+  they must roll back to a previous build instead of opting back in
+  at runtime.
 - `packaging/scripts/smoke-e2e.sh` now asserts
   `recognition_items.total >= 1` for the uploaded happy-path photo. The
   fallback path does NOT write `recognition_items` rows, so this
@@ -89,14 +91,13 @@ stub Identity graph (not on the critical recognition path).
   Any WARN line in the server log now fails the smoke, so a silent
   inference regression that quietly falls back to `unmatched` will
   surface immediately.
-- The `Outcome::FallbackUnmatched` variant has been deleted; both code
-  paths that previously used it (the `state.models.ready() == false`
-  bootstrap branch and the opt-in stub-fallback branch) now produce
-  `Outcome::Unmatched` directly, which still maps to `photo_status =
-  'unmatched'` via `Outcome::as_status`. The WARN log line itself is
-  preserved (gated behind `F1P_INFERENCE_STUB_FALLBACK=1`) so an
-  operator who explicitly opts back in still sees the regression
-  signal.
+- The `Outcome::FallbackUnmatched` variant has been deleted; the only
+  remaining path that produces `Outcome::Unmatched` is the
+  `state.models.ready() == false` bootstrap branch (no
+  `libonnxruntime.so` or no `.onnx` files), which still maps to
+  `photo_status = 'unmatched'` via `Outcome::as_status`. The opt-in
+  stub-fallback branch and its WARN log line were removed at
+  milestone #1c along with `stub_fallback_enabled()`.
 
 ### Important caveat: yolov8n is COCO-trained, not tool/device-specific
 
