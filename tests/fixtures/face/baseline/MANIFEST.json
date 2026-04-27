@@ -1,0 +1,722 @@
+{
+  "milestone": "#2c face recognition P/R baseline",
+  "seed": 20260427,
+  "params": {
+    "WESTERN_ENROLLED": 8,
+    "EASTERN_ENROLLED": 4,
+    "WESTERN_DISTRACTOR": 2,
+    "EASTERN_DISTRACTOR": 1,
+    "MIN_LFW_COUNT": 3,
+    "MAX_LFW_COUNT": 10,
+    "upscale_to": [
+      256,
+      256
+    ],
+    "upscale_resampler": "PIL.Image.BICUBIC"
+  },
+  "sources": {
+    "western": {
+      "name": "Labeled Faces in the Wild (funneled)",
+      "upstream": "https://vis-www.cs.umass.edu/lfw/",
+      "fetched_via": "sklearn.datasets.fetch_lfw_people (figshare CDN)",
+      "license": "Faces are publicly available news photos; cite Huang et al. 2007.",
+      "native_size": "250x250 RGB"
+    },
+    "eastern": {
+      "name": "jack139/face-dataset/train2 (Asian A subset, 50 IDs)",
+      "upstream": "https://github.com/jack139/face-dataset",
+      "fetched_via": "GitHub contents API + raw.githubusercontent.com",
+      "license": "Repo is MIT-licensed; underlying portrait images are filtered crops produced by jack139's gen_data.py from public Asian-celeb sources. Treat as research-only.",
+      "native_size": "~140x147 RGB (dlib face crops)",
+      "note": "Bicubic-upscaled to 256x256 so SCRFD's 640x640 input pipeline operates at a usable scale; detection rate is reported separately for this bucket in the eval output."
+    }
+  },
+  "future_extensions": [
+    "jack139/face-dataset/train4 (Asian B 50 IDs, 112x112)",
+    "jack139/face-dataset/train8 (Asian A 412 IDs)",
+    "insightface dataset zoo: faces_glintasia (28M images, 94k IDs) — requires registration",
+    "X-zhangyang/Real-World-Masked-Face-Dataset (RMFD)",
+    "ZhaoJ9014/face.evoLVe.PyTorch dataset zoo (CASIA-WebFace cleaned)"
+  ],
+  "enrolled_roster": [
+    {
+      "slug": "ilan_ramon",
+      "display": "Ilan Ramon",
+      "bucket": "western",
+      "employee_no": "E-2C-W-ilan_ramon"
+    },
+    {
+      "slug": "valentino_rossi",
+      "display": "Valentino Rossi",
+      "bucket": "western",
+      "employee_no": "E-2C-W-valentino_rossi"
+    },
+    {
+      "slug": "angelo_reyes",
+      "display": "Angelo Reyes",
+      "bucket": "western",
+      "employee_no": "E-2C-W-angelo_reyes"
+    },
+    {
+      "slug": "zhu_rongji",
+      "display": "Zhu Rongji",
+      "bucket": "western",
+      "employee_no": "E-2C-W-zhu_rongji"
+    },
+    {
+      "slug": "osama_bin_laden",
+      "display": "Osama bin Laden",
+      "bucket": "western",
+      "employee_no": "E-2C-W-osama_bin_laden"
+    },
+    {
+      "slug": "lk_advani",
+      "display": "LK Advani",
+      "bucket": "western",
+      "employee_no": "E-2C-W-lk_advani"
+    },
+    {
+      "slug": "robert_kocharian",
+      "display": "Robert Kocharian",
+      "bucket": "western",
+      "employee_no": "E-2C-W-robert_kocharian"
+    },
+    {
+      "slug": "amelia_vega",
+      "display": "Amelia Vega",
+      "bucket": "western",
+      "employee_no": "E-2C-W-amelia_vega"
+    },
+    {
+      "slug": "caihancen",
+      "display": "caihancen",
+      "bucket": "eastern",
+      "employee_no": "E-2C-E-caihancen"
+    },
+    {
+      "slug": "baijingting",
+      "display": "baijingting",
+      "bucket": "eastern",
+      "employee_no": "E-2C-E-baijingting"
+    },
+    {
+      "slug": "aidai",
+      "display": "aidai",
+      "bucket": "eastern",
+      "employee_no": "E-2C-E-aidai"
+    },
+    {
+      "slug": "baobeier",
+      "display": "baobeier",
+      "bucket": "eastern",
+      "employee_no": "E-2C-E-baobeier"
+    }
+  ],
+  "distractor_roster": [
+    {
+      "slug": "thomas_rupprath",
+      "display": "Thomas Rupprath",
+      "bucket": "western"
+    },
+    {
+      "slug": "marcelo_rios",
+      "display": "Marcelo Rios",
+      "bucket": "western"
+    },
+    {
+      "slug": "caiyilin",
+      "display": "caiyilin",
+      "bucket": "eastern"
+    }
+  ],
+  "files": [
+    {
+      "path": "tests/fixtures/face/baseline/western_ilan_ramon/seed_01.jpg",
+      "role": "seed",
+      "identity_slug": "ilan_ramon",
+      "identity_display": "Ilan Ramon",
+      "bucket": "western",
+      "enrolled": true,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "LFW funneled",
+      "sha256": "fb32955c3da62d2dcda4fffc5719c3c17a6f39c1d211ae42826b4c47770f4cb0",
+      "bytes": 22333
+    },
+    {
+      "path": "tests/fixtures/face/baseline/western_ilan_ramon/query_01.jpg",
+      "role": "query",
+      "identity_slug": "ilan_ramon",
+      "identity_display": "Ilan Ramon",
+      "bucket": "western",
+      "enrolled": true,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "LFW funneled",
+      "sha256": "e9b72e5859d621900a75b11c40516375328b2437f2ddf52d9c2ab642e8affb89",
+      "bytes": 21525
+    },
+    {
+      "path": "tests/fixtures/face/baseline/western_ilan_ramon/query_02.jpg",
+      "role": "query",
+      "identity_slug": "ilan_ramon",
+      "identity_display": "Ilan Ramon",
+      "bucket": "western",
+      "enrolled": true,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "LFW funneled",
+      "sha256": "242c4999dbc72db80f46973ce2d3f27e398c4798a3b3cb3109d28d7635ad139a",
+      "bytes": 19592
+    },
+    {
+      "path": "tests/fixtures/face/baseline/western_valentino_rossi/seed_01.jpg",
+      "role": "seed",
+      "identity_slug": "valentino_rossi",
+      "identity_display": "Valentino Rossi",
+      "bucket": "western",
+      "enrolled": true,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "LFW funneled",
+      "sha256": "674a41a1f01e3debe528bd0dc44344240fa4144212ede3ccbe62398eeac72b85",
+      "bytes": 24828
+    },
+    {
+      "path": "tests/fixtures/face/baseline/western_valentino_rossi/query_01.jpg",
+      "role": "query",
+      "identity_slug": "valentino_rossi",
+      "identity_display": "Valentino Rossi",
+      "bucket": "western",
+      "enrolled": true,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "LFW funneled",
+      "sha256": "3b7763ca59d8b304ea9b874b81ef0498d4ce1b5f02f5c884730c38b2b8dea49b",
+      "bytes": 21749
+    },
+    {
+      "path": "tests/fixtures/face/baseline/western_valentino_rossi/query_02.jpg",
+      "role": "query",
+      "identity_slug": "valentino_rossi",
+      "identity_display": "Valentino Rossi",
+      "bucket": "western",
+      "enrolled": true,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "LFW funneled",
+      "sha256": "ecd3658f704b7c100ded5e4d7ceac904bb4c7276ff1be354d4c925ebf1bcdc58",
+      "bytes": 21502
+    },
+    {
+      "path": "tests/fixtures/face/baseline/western_angelo_reyes/seed_01.jpg",
+      "role": "seed",
+      "identity_slug": "angelo_reyes",
+      "identity_display": "Angelo Reyes",
+      "bucket": "western",
+      "enrolled": true,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "LFW funneled",
+      "sha256": "65bbac1c21417755e5dcfb6030a626be2bc3bc7a761c77a56a553b46e2fceba4",
+      "bytes": 18861
+    },
+    {
+      "path": "tests/fixtures/face/baseline/western_angelo_reyes/query_01.jpg",
+      "role": "query",
+      "identity_slug": "angelo_reyes",
+      "identity_display": "Angelo Reyes",
+      "bucket": "western",
+      "enrolled": true,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "LFW funneled",
+      "sha256": "986f4841d455229931e600820355b809b034f34229e62c98a2692c098d45fb87",
+      "bytes": 18521
+    },
+    {
+      "path": "tests/fixtures/face/baseline/western_angelo_reyes/query_02.jpg",
+      "role": "query",
+      "identity_slug": "angelo_reyes",
+      "identity_display": "Angelo Reyes",
+      "bucket": "western",
+      "enrolled": true,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "LFW funneled",
+      "sha256": "7b877fa3fbf73ff499dbbe366f922202e8f65e72d3d8fa7e6a4cdcf738585ff7",
+      "bytes": 23090
+    },
+    {
+      "path": "tests/fixtures/face/baseline/western_zhu_rongji/seed_01.jpg",
+      "role": "seed",
+      "identity_slug": "zhu_rongji",
+      "identity_display": "Zhu Rongji",
+      "bucket": "western",
+      "enrolled": true,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "LFW funneled",
+      "sha256": "2061287adf607f665d47275d845939e47812d4b57ec2db7d443284fed157b2ab",
+      "bytes": 18511
+    },
+    {
+      "path": "tests/fixtures/face/baseline/western_zhu_rongji/query_01.jpg",
+      "role": "query",
+      "identity_slug": "zhu_rongji",
+      "identity_display": "Zhu Rongji",
+      "bucket": "western",
+      "enrolled": true,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "LFW funneled",
+      "sha256": "e275b9971b325dcb206c0b1d976082b65742669455fb8be3af12e9e266220252",
+      "bytes": 14558
+    },
+    {
+      "path": "tests/fixtures/face/baseline/western_zhu_rongji/query_02.jpg",
+      "role": "query",
+      "identity_slug": "zhu_rongji",
+      "identity_display": "Zhu Rongji",
+      "bucket": "western",
+      "enrolled": true,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "LFW funneled",
+      "sha256": "70503f5b55cec428e885e7df9fe081b7c216cf0901bd995b0661211967a4a0b5",
+      "bytes": 19575
+    },
+    {
+      "path": "tests/fixtures/face/baseline/western_osama_bin_laden/seed_01.jpg",
+      "role": "seed",
+      "identity_slug": "osama_bin_laden",
+      "identity_display": "Osama bin Laden",
+      "bucket": "western",
+      "enrolled": true,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "LFW funneled",
+      "sha256": "6be3130f133e933fbd4c82e216034eae8a28f492f18c06ba901d5be4fd40db2c",
+      "bytes": 24927
+    },
+    {
+      "path": "tests/fixtures/face/baseline/western_osama_bin_laden/query_01.jpg",
+      "role": "query",
+      "identity_slug": "osama_bin_laden",
+      "identity_display": "Osama bin Laden",
+      "bucket": "western",
+      "enrolled": true,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "LFW funneled",
+      "sha256": "316a9cd7ece4cac57d1a52eb9d89f3ccac09b069fb7400ed41da8fa0f657e42a",
+      "bytes": 19653
+    },
+    {
+      "path": "tests/fixtures/face/baseline/western_osama_bin_laden/query_02.jpg",
+      "role": "query",
+      "identity_slug": "osama_bin_laden",
+      "identity_display": "Osama bin Laden",
+      "bucket": "western",
+      "enrolled": true,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "LFW funneled",
+      "sha256": "55f658da13c70f698799e97ccf93a313c63def633d2dc1782cbc0070bcd0651e",
+      "bytes": 18704
+    },
+    {
+      "path": "tests/fixtures/face/baseline/western_lk_advani/seed_01.jpg",
+      "role": "seed",
+      "identity_slug": "lk_advani",
+      "identity_display": "LK Advani",
+      "bucket": "western",
+      "enrolled": true,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "LFW funneled",
+      "sha256": "7591691c5b511754a3ae8ab2fec0513496c0c053b2e44e758a5e1bef7189b7bd",
+      "bytes": 21278
+    },
+    {
+      "path": "tests/fixtures/face/baseline/western_lk_advani/query_01.jpg",
+      "role": "query",
+      "identity_slug": "lk_advani",
+      "identity_display": "LK Advani",
+      "bucket": "western",
+      "enrolled": true,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "LFW funneled",
+      "sha256": "2cb46e56493ac7ade0bf4bd871fb806cc40d196bbd70f1d6ab3eb3dfe1bd99f0",
+      "bytes": 19539
+    },
+    {
+      "path": "tests/fixtures/face/baseline/western_lk_advani/query_02.jpg",
+      "role": "query",
+      "identity_slug": "lk_advani",
+      "identity_display": "LK Advani",
+      "bucket": "western",
+      "enrolled": true,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "LFW funneled",
+      "sha256": "89a3ccb5aaedced68ab7c591a85184a490f38e246d21ac96004b9fb20e77c454",
+      "bytes": 19171
+    },
+    {
+      "path": "tests/fixtures/face/baseline/western_robert_kocharian/seed_01.jpg",
+      "role": "seed",
+      "identity_slug": "robert_kocharian",
+      "identity_display": "Robert Kocharian",
+      "bucket": "western",
+      "enrolled": true,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "LFW funneled",
+      "sha256": "f4eb2b302bc0c4a4a6654ea4ac386d73ff1df61f456f62610c9055953e0b437f",
+      "bytes": 17714
+    },
+    {
+      "path": "tests/fixtures/face/baseline/western_robert_kocharian/query_01.jpg",
+      "role": "query",
+      "identity_slug": "robert_kocharian",
+      "identity_display": "Robert Kocharian",
+      "bucket": "western",
+      "enrolled": true,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "LFW funneled",
+      "sha256": "49021618d9f535f43135c60d732bcb483546e72cee807b251e3430a98d2b270f",
+      "bytes": 17404
+    },
+    {
+      "path": "tests/fixtures/face/baseline/western_robert_kocharian/query_02.jpg",
+      "role": "query",
+      "identity_slug": "robert_kocharian",
+      "identity_display": "Robert Kocharian",
+      "bucket": "western",
+      "enrolled": true,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "LFW funneled",
+      "sha256": "cb1e50a16d06fdd208e145aee6190e9cb4653e04753d44a5c5aeffab68640309",
+      "bytes": 22085
+    },
+    {
+      "path": "tests/fixtures/face/baseline/western_amelia_vega/seed_01.jpg",
+      "role": "seed",
+      "identity_slug": "amelia_vega",
+      "identity_display": "Amelia Vega",
+      "bucket": "western",
+      "enrolled": true,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "LFW funneled",
+      "sha256": "30260b12ff3ddc08ab745603918025892a18532af44e5940f2087dd9e77be165",
+      "bytes": 17989
+    },
+    {
+      "path": "tests/fixtures/face/baseline/western_amelia_vega/query_01.jpg",
+      "role": "query",
+      "identity_slug": "amelia_vega",
+      "identity_display": "Amelia Vega",
+      "bucket": "western",
+      "enrolled": true,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "LFW funneled",
+      "sha256": "ad1df0e8c2fb257ab26fbf7e453c220458441adcf44ec10ba7d6a56f16da2a6f",
+      "bytes": 21222
+    },
+    {
+      "path": "tests/fixtures/face/baseline/western_amelia_vega/query_02.jpg",
+      "role": "query",
+      "identity_slug": "amelia_vega",
+      "identity_display": "Amelia Vega",
+      "bucket": "western",
+      "enrolled": true,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "LFW funneled",
+      "sha256": "6bf67fa58c46cc6db6d24990a962f472412fe6b6cf99348e196cc2d65dcdf8e3",
+      "bytes": 20595
+    },
+    {
+      "path": "tests/fixtures/face/baseline/eastern_caihancen/seed_01.jpg",
+      "role": "seed",
+      "identity_slug": "caihancen",
+      "identity_display": "caihancen",
+      "bucket": "eastern",
+      "enrolled": true,
+      "upscaled_from": "(153, 140)",
+      "upscaled_to": [
+        256,
+        256
+      ],
+      "source_origin": "jack139/face-dataset/train2",
+      "sha256": "a7317027d8f072c90a7fbeccaed8933f0f87df198bf1e294f06e6c29d626e322",
+      "bytes": 10571
+    },
+    {
+      "path": "tests/fixtures/face/baseline/eastern_caihancen/query_01.jpg",
+      "role": "query",
+      "identity_slug": "caihancen",
+      "identity_display": "caihancen",
+      "bucket": "eastern",
+      "enrolled": true,
+      "upscaled_from": "(141, 137)",
+      "upscaled_to": [
+        256,
+        256
+      ],
+      "source_origin": "jack139/face-dataset/train2",
+      "sha256": "eaf5604d17f91ee74e2f373e6b508fa9c6b4b6017c0845e175f0ed2d8f603d8d",
+      "bytes": 10345
+    },
+    {
+      "path": "tests/fixtures/face/baseline/eastern_caihancen/query_02.jpg",
+      "role": "query",
+      "identity_slug": "caihancen",
+      "identity_display": "caihancen",
+      "bucket": "eastern",
+      "enrolled": true,
+      "upscaled_from": "(134, 149)",
+      "upscaled_to": [
+        256,
+        256
+      ],
+      "source_origin": "jack139/face-dataset/train2",
+      "sha256": "1c4735e1e16f77c29d9d44cabb7fd031f87beeafa022a6a916f75f8487461af0",
+      "bytes": 9925
+    },
+    {
+      "path": "tests/fixtures/face/baseline/eastern_baijingting/seed_01.jpg",
+      "role": "seed",
+      "identity_slug": "baijingting",
+      "identity_display": "baijingting",
+      "bucket": "eastern",
+      "enrolled": true,
+      "upscaled_from": "(139, 137)",
+      "upscaled_to": [
+        256,
+        256
+      ],
+      "source_origin": "jack139/face-dataset/train2",
+      "sha256": "0cae39e51ec7c8c05796677b51e60dc18a85deb7db533427a911456da9dc5821",
+      "bytes": 11180
+    },
+    {
+      "path": "tests/fixtures/face/baseline/eastern_baijingting/query_01.jpg",
+      "role": "query",
+      "identity_slug": "baijingting",
+      "identity_display": "baijingting",
+      "bucket": "eastern",
+      "enrolled": true,
+      "upscaled_from": "(141, 152)",
+      "upscaled_to": [
+        256,
+        256
+      ],
+      "source_origin": "jack139/face-dataset/train2",
+      "sha256": "f1ee5fa26b415bffaf9426e1f402175228569f7ee7d906d1eb576e687d469c53",
+      "bytes": 10705
+    },
+    {
+      "path": "tests/fixtures/face/baseline/eastern_baijingting/query_02.jpg",
+      "role": "query",
+      "identity_slug": "baijingting",
+      "identity_display": "baijingting",
+      "bucket": "eastern",
+      "enrolled": true,
+      "upscaled_from": "(153, 148)",
+      "upscaled_to": [
+        256,
+        256
+      ],
+      "source_origin": "jack139/face-dataset/train2",
+      "sha256": "1aa3a0c1846be0b0b814a5152b81cc00b1955b5b17e49002aaf0a7ce09d1fb6e",
+      "bytes": 8942
+    },
+    {
+      "path": "tests/fixtures/face/baseline/eastern_aidai/seed_01.jpg",
+      "role": "seed",
+      "identity_slug": "aidai",
+      "identity_display": "aidai",
+      "bucket": "eastern",
+      "enrolled": true,
+      "upscaled_from": "(140, 147)",
+      "upscaled_to": [
+        256,
+        256
+      ],
+      "source_origin": "jack139/face-dataset/train2",
+      "sha256": "179ddfd20169c26d19db94602d2a52d388d370f779285c8424d0b4853e72d11c",
+      "bytes": 9850
+    },
+    {
+      "path": "tests/fixtures/face/baseline/eastern_aidai/query_01.jpg",
+      "role": "query",
+      "identity_slug": "aidai",
+      "identity_display": "aidai",
+      "bucket": "eastern",
+      "enrolled": true,
+      "upscaled_from": "(144, 133)",
+      "upscaled_to": [
+        256,
+        256
+      ],
+      "source_origin": "jack139/face-dataset/train2",
+      "sha256": "8f63870fe171234a9c906796073535bb892ea6fbc972f1d44189acf1efbc5b03",
+      "bytes": 11230
+    },
+    {
+      "path": "tests/fixtures/face/baseline/eastern_aidai/query_02.jpg",
+      "role": "query",
+      "identity_slug": "aidai",
+      "identity_display": "aidai",
+      "bucket": "eastern",
+      "enrolled": true,
+      "upscaled_from": "(139, 144)",
+      "upscaled_to": [
+        256,
+        256
+      ],
+      "source_origin": "jack139/face-dataset/train2",
+      "sha256": "9152c291ef3c786235329e1b1060ed90d07e9a02adfc1a48b7443d148f788f67",
+      "bytes": 11789
+    },
+    {
+      "path": "tests/fixtures/face/baseline/eastern_baobeier/seed_01.jpg",
+      "role": "seed",
+      "identity_slug": "baobeier",
+      "identity_display": "baobeier",
+      "bucket": "eastern",
+      "enrolled": true,
+      "upscaled_from": "(144, 139)",
+      "upscaled_to": [
+        256,
+        256
+      ],
+      "source_origin": "jack139/face-dataset/train2",
+      "sha256": "19dca1e3de2355825771d78969f32b2bae4c5e0973277187050739a50492616b",
+      "bytes": 9714
+    },
+    {
+      "path": "tests/fixtures/face/baseline/eastern_baobeier/query_01.jpg",
+      "role": "query",
+      "identity_slug": "baobeier",
+      "identity_display": "baobeier",
+      "bucket": "eastern",
+      "enrolled": true,
+      "upscaled_from": "(134, 145)",
+      "upscaled_to": [
+        256,
+        256
+      ],
+      "source_origin": "jack139/face-dataset/train2",
+      "sha256": "c721ff0c024405cfdc336af2be2e9d80e8e7bb5eacbcfb4a9929e4b0bc7c7a3c",
+      "bytes": 12055
+    },
+    {
+      "path": "tests/fixtures/face/baseline/eastern_baobeier/query_02.jpg",
+      "role": "query",
+      "identity_slug": "baobeier",
+      "identity_display": "baobeier",
+      "bucket": "eastern",
+      "enrolled": true,
+      "upscaled_from": "(137, 146)",
+      "upscaled_to": [
+        256,
+        256
+      ],
+      "source_origin": "jack139/face-dataset/train2",
+      "sha256": "d660ccdb30348dbcae75b11878b8b5e99d9d4acde425179cda0c8dba1d8892a8",
+      "bytes": 9509
+    },
+    {
+      "path": "tests/fixtures/face/baseline/_distractor_western_thomas_rupprath/query_01.jpg",
+      "role": "query",
+      "identity_slug": "thomas_rupprath",
+      "identity_display": "Thomas Rupprath",
+      "bucket": "western",
+      "enrolled": false,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "LFW funneled",
+      "sha256": "28b727d75822031c4bb7dd0f032998a5820c09e42c08f781bcfbf3f3e5f1e8cd",
+      "bytes": 24735
+    },
+    {
+      "path": "tests/fixtures/face/baseline/_distractor_western_thomas_rupprath/query_02.jpg",
+      "role": "query",
+      "identity_slug": "thomas_rupprath",
+      "identity_display": "Thomas Rupprath",
+      "bucket": "western",
+      "enrolled": false,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "LFW funneled",
+      "sha256": "36b80af291b8e583fb7ee009759b8d21f5be92852c7a47e2cd263f5978cb1397",
+      "bytes": 20988
+    },
+    {
+      "path": "tests/fixtures/face/baseline/_distractor_western_marcelo_rios/query_01.jpg",
+      "role": "query",
+      "identity_slug": "marcelo_rios",
+      "identity_display": "Marcelo Rios",
+      "bucket": "western",
+      "enrolled": false,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "LFW funneled",
+      "sha256": "5e93b62d0db8f001f99ee798eedfa8c32b493e3872b347c577895256dcc36d95",
+      "bytes": 16600
+    },
+    {
+      "path": "tests/fixtures/face/baseline/_distractor_western_marcelo_rios/query_02.jpg",
+      "role": "query",
+      "identity_slug": "marcelo_rios",
+      "identity_display": "Marcelo Rios",
+      "bucket": "western",
+      "enrolled": false,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "LFW funneled",
+      "sha256": "8aed32eefcecfdcaaa487b6946cfc34886e82f0395023bddc75b3e4f68eda037",
+      "bytes": 19436
+    },
+    {
+      "path": "tests/fixtures/face/baseline/_distractor_eastern_caiyilin/query_01.jpg",
+      "role": "query",
+      "identity_slug": "caiyilin",
+      "identity_display": "caiyilin",
+      "bucket": "eastern",
+      "enrolled": false,
+      "upscaled_from": "(133, 143)",
+      "upscaled_to": [
+        256,
+        256
+      ],
+      "source_origin": "jack139/face-dataset/train2",
+      "sha256": "ff640aac3e5507b30a0fb5a3b632a23a8afffb85a4e7e92248f9762fd50a5fa7",
+      "bytes": 10102
+    },
+    {
+      "path": "tests/fixtures/face/baseline/_distractor_eastern_caiyilin/query_02.jpg",
+      "role": "query",
+      "identity_slug": "caiyilin",
+      "identity_display": "caiyilin",
+      "bucket": "eastern",
+      "enrolled": false,
+      "upscaled_from": "(148, 145)",
+      "upscaled_to": [
+        256,
+        256
+      ],
+      "source_origin": "jack139/face-dataset/train2",
+      "sha256": "a60e691e68235061b1774ed59e31993d62f76601913fd1bfdd325963c6cc0f2e",
+      "bytes": 9058
+    }
+  ]
+}

@@ -148,3 +148,121 @@ flowchart LR
 - 单张（一人 + 一工具）：检测 ~150ms + face emb ~50ms + tool emb ~200ms = **~400ms**。
 - 8 并发 worker、CPU 10C20T 环境，理论吞吐 ~50 photo/s，实际限于磁盘与 DB。
 - 全局 HNSW + owner_type 过滤足够快；规模 < 10万向量下查询 < 5ms。
+
+## 12. Precision / Recall baseline (milestone #2c — 2026-04-27 Asia/Shanghai)
+
+First end-to-end Precision / Recall baseline against the real ONNX pipeline
+(SCRFD det_500m + ArcFace w600k_mbf), using public face datasets. Face bucket
+only at this milestone; tool / device P/R is deferred until a domain-specific
+detector replaces YOLOv8n COCO (roadmap #5).
+
+### Fixture
+
+`tests/fixtures/face/baseline/` — 42 JPEGs / ~695 KiB / 12 enrolled identities
++ 3 distractor identities. Each enrolled identity has 1 seed photo + 2 query
+photos; each distractor has 2 query photos.
+
+| bucket             | source                                          | identities | per-id photos      | total |
+| ------------------ | ----------------------------------------------- | ---------- | ------------------ | ----- |
+| Western enrolled   | LFW funneled (sklearn `fetch_lfw_people`)       | 8          | 3 (1 seed + 2 q)   | 24    |
+| Eastern enrolled   | jack139/face-dataset train2 (Asian celeb crops) | 4          | 3 (1 seed + 2 q)   | 12    |
+| Western distractor | LFW funneled (held out)                         | 2          | 2 (query only)     | 4     |
+| Eastern distractor | jack139/face-dataset train2 (held out)          | 1          | 2 (query only)     | 2     |
+| **total**          |                                                 | **15**     |                    | **42** |
+
+Eastern crops are bicubic-upscaled from native 140×147 to 256×256 to compensate
+for low resolution. Provenance + sha256 + license metadata at
+`tests/fixtures/face/baseline/MANIFEST.json`.
+
+### Methodology
+
+`tools/eval_pr.py`, driven by `packaging/scripts/recognition-pr-baseline.sh`:
+
+1. Boot the server (release binary), log in, create project + WO.
+2. Create 12 `persons` rows, upload each enrolled identity's seed photo as
+   `owner_type=person` to seed `identity_embeddings(source='initial')`.
+3. Drain queue. Upload all 30 query photos (24 enrolled + 6 distractor) as
+   `owner_type=wo_raw` to the project's work-order. Drain queue.
+4. Read `detections` per query photo via psql: top-1 `score` and
+   `matched_owner_id` regardless of bucket (so we can replay thresholds
+   off-line without re-running the model).
+5. Replay `Hit::bucket(t)` over a threshold sweep
+   `match_lower ∈ [0.40, 0.45, 0.50, 0.55, 0.60, 0.62, 0.65, 0.70, 0.75, 0.80]`
+   with `low_lower = min(0.50, match_lower)` and compute P / R / F1 per bucket
+   (Western / Eastern / overall).
+
+Raw artefact: `docs/baselines/2c-recognition-pr.json`.
+
+### Results at `Thresholds::DEFAULT { low=0.50, match=0.62 }`
+
+| bucket      | n  | face_det_rate | TP | FP | FN | TN | P    | R     | F1     |
+| ----------- | -- | ------------- | -- | -- | -- | -- | ---- | ----- | ------ |
+| Western     | 20 | **1.0**       | 2  | 0  | 14 | 4  | 1.0  | 0.125 | 0.222  |
+| Eastern     | 10 | **0.0**       | 0  | 0  | 8  | 2  | n/a  | 0.0   | n/a    |
+| **overall** | 30 | 0.667         | 2  | 0  | 22 | 6  | 1.0  | 0.083 | 0.154  |
+
+(`face_det_rate` = fraction of query photos where SCRFD returns ≥1 face. The
+Eastern 0.0 is the dominant finding of this milestone; see below.)
+
+### Threshold sweep (overall, all 30 query photos)
+
+| match_lower    | TP | FP | FN | TN | P    | R     | F1        |
+| -------------- | -- | -- | -- | -- | ---- | ----- | --------- |
+| 0.40           | 8  | 0  | 16 | 6  | 1.0  | 0.333 | **0.500** |
+| 0.45           | 7  | 0  | 17 | 6  | 1.0  | 0.292 | 0.452     |
+| 0.50           | 6  | 0  | 18 | 6  | 1.0  | 0.250 | 0.400     |
+| 0.55           | 3  | 0  | 21 | 6  | 1.0  | 0.125 | 0.222     |
+| 0.60           | 2  | 0  | 22 | 6  | 1.0  | 0.083 | 0.154     |
+| **0.62 (default)** | 2 | 0 | 22 | 6 | 1.0 | 0.083 | 0.154     |
+| 0.65           | 2  | 0  | 22 | 6  | 1.0  | 0.083 | 0.154     |
+| 0.70           | 0  | 0  | 24 | 6  | n/a  | 0.0   | n/a       |
+
+### Score distributions
+
+- Western enrolled-with-face top1_score (n = 16): min = 0.234,
+  median = 0.400, max = 0.663.
+- Western distractor top1_score (n = 4): max = **0.2612**.
+- Clear separation gap: distractor max = 0.261 vs second-lowest enrolled
+  correct = 0.293 → ~0.03 gap; with `match_lower = 0.40` the safety margin
+  to distractor max grows to 0.14.
+
+### Findings
+
+1. **Eastern bucket: SCRFD detector fails on jack139/train2 crops.**
+   `face_count = 0` on all 10 Eastern photos even after 256×256 bicubic
+   upscaling. Same root-cause family as the StyleGAN domain-gap finding
+   from milestone #2b. Eastern P / R is currently undefined; threshold
+   calibration must rely on Western data alone until a higher-quality
+   Asian face dataset is curated (CASIA-WebFace, glint_asia, or RMFD).
+   Tracked as follow-up `#2c-asia`.
+2. **Western recall at the current default is low (R = 0.125).** Only 2
+   of 16 enrolled-with-face Western queries cross the
+   `match_lower = 0.62` boundary. The sweep shows `match_lower = 0.40`
+   triples TP (8 / 16) at preserved P = 1.0, yielding the best F1
+   (0.500); distractors max at 0.261 leave a 0.14 safety margin.
+3. **No false positives across the entire sweep.** All 4 Western
+   distractor + 2 Eastern distractor query photos land in `unmatched`
+   at every tested threshold ≥ 0.40. The strict default is therefore
+   `precision-cheap, recall-expensive` against this dataset.
+
+### Threshold decision
+
+Defer to follow-up milestone `#2c-tune`: the data supports lowering
+`match_lower` from 0.62 to 0.40 (or 0.50 conservatively), but with only
+6 distractor queries and zero Eastern signal the false-positive rate
+confidence interval is too wide for an immediate global default change.
+The recommendation is queued for after `#2c-asia` widens the dataset.
+
+`Thresholds::DEFAULT` is therefore **confirmed unchanged at
+{ low_lower = 0.50, match_lower = 0.62, augment_upper = 0.95 }** for this
+milestone, with a documented finding that lowering the bound is the
+expected next step.
+
+### Reproduce
+
+```sh
+sudo -u f1u bash -lc 'cd /root/F1-photo && bash packaging/scripts/recognition-pr-baseline.sh'
+# Reads tests/fixtures/face/baseline/MANIFEST.json
+# Writes /tmp/pr-baseline.json
+# Archived run at docs/baselines/2c-recognition-pr.json
+```
