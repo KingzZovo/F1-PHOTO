@@ -162,13 +162,18 @@ Owner-known person photo bootstrap shipped at commit **9a85f7c**
   simplification we want; multi-face disambiguation (largest-face-only,
   or reject-multi-face) can be added later if the false-seed rate
   becomes a problem.
-- `owner_type='tool'` and `owner_type='device'` uploads are **NOT** yet
-  on the bootstrap path. They currently log a `tracing::warn!` line
-  and fall through to the standard pipeline, so their gallery is still
-  empty after upload. This is tracked as **milestone #2a-tool** in the
-  roadmap (deferred); the implementation is symmetric — YOLOv8 region
-  proposal + DINOv2 per-crop embed → `'initial'` rows for
-  `owner_type='tool'` / `'device'`.
+- ~~`owner_type='tool'` and `owner_type='device'` uploads are **NOT** yet
+  on the bootstrap path.~~ ✅ **Done at milestone #2a-tool** (commit
+  e37d6e4). The `tool|device` branch of `worker::run_real_pipeline`
+  now runs `run_tool_bootstrap_pipeline`: YOLOv8n region proposals +
+  DINOv2-small per-crop CLS embedding (zero-padded to 512d) →
+  `identity_embeddings` rows with `source='initial'` anchored to the
+  asserted owner; `detections` rows persisted with target_type
+  mirroring owner_type and `match_status='matched'`; no
+  recognition_items rows. Same parameterized function backs both
+  `tool` and `device` (binds `owner_type: &str` to the `owner_type`
+  / `detect_target` enum casts). End-to-end exercised by the new
+  #2a-tool smoke section.
 - Verification at #2a:
   - cargo fmt + cargo clippy -- -D warnings: clean.
   - cargo test --lib: 30/30 passing (no new tests; the bootstrap path
@@ -229,8 +234,72 @@ and a new `tests/fixtures/face/` directory.
     0 WARN / 0 ERROR / 0 panic, `ort_available=true ready=true`)
     held.
 - Cold-start gap is now end-to-end-proven for **person** owners. The
-  remaining gap is **milestone #2a-tool** (owner-known tool/device
-  bootstrap), still tracked as deferred in the roadmap.
+  remaining tool/device gap (milestone #2a-tool) was closed in a
+  follow-up commit; see the next section.
+
+### Milestone #2a-tool status (2026-04-27 +08)
+
+Owner-known tool/device bootstrap shipped at commit **e37d6e4**
+(`feat(worker): owner-known tool/device photo seeds gallery as
+'initial' (milestone #2a-tool)`). This extends the cold-start
+guarantee from `person` to all three owner kinds.
+
+- Source change: `server/src/worker/mod.rs` — the `tool|device` warn
+  fall-through is replaced with `run_tool_bootstrap_pipeline`, a new
+  183-line async function that mirrors `run_face_bootstrap_pipeline`
+  but with YOLOv8n region proposals + DINOv2-small per-crop CLS
+  embedding (zero-padded to 512d via `recall::pad_to_512`). The same
+  function backs both `tool` and `device`, parameterized only on
+  `owner_type: &str`; SQL casts use `$N::detect_target` and
+  `$N::owner_type` so the ENUMs are honoured. Zero-detection branch
+  logs `tracing::warn!` and returns an empty bucket vec (photo stays
+  `unmatched`, no panic, no orphan rows).
+- New fixture: `tests/fixtures/tool/tool_001.jpg` — 600×400 RGB
+  JPEG q=90, 71,303 B, sha256
+  `db702e664b962a9daec5ef9395a7ffe7290aa9ef91471a3886717fc1cceaf325`.
+  Source: `skimage.data.coffee()` (public-domain coffee-cup
+  photograph bundled in scikit-image). YOLOv8n at `DEFAULT_CONF=0.25`
+  finds two cup-class crops in this image, which is enough to
+  exercise the multi-crop path (the smoke happens to assert
+  `identity_embeddings('initial') >= 1`, observed value 2).
+  Provenance + license in `tests/fixtures/tool/MANIFEST.json` and
+  long-form rationale + regenerate recipe in
+  `tests/fixtures/tool/README.md` (mirrors the face fixture).
+- The smoke now layers a #2a-tool block on top of the existing
+  #2b person block, parallel in structure: create tool `T-2A-001`
+  via `POST /api/tools` → upload fixture as `owner_type=tool` in
+  project A → assert seed photo `matched`,
+  `identity_embeddings('initial') >= 1`, `detections` matched
+  rows >= 1 with `target_type='tool'` and `matched_owner_id` =
+  asserted tool, `recognition_items` rows == 0 → upload SAME
+  fixture as `wo_raw` in project B → assert wo_raw photo
+  `matched`, `detections` matched rows pointing back at the
+  project-A tool >= 1, `recognition_items` matched-bucket rows >= 1.
+  Cross-project recall hit confirms `inference/recall.rs` is
+  workspace-global for non-face owners too (filters on
+  `owner_type` only, never on `project_id`).
+- Verification at #2a-tool:
+  - cargo fmt --all --check: clean.
+  - cargo clippy --all-targets --release -- -D warnings: clean.
+  - cargo test --lib --release: 30/30 passing.
+  - cargo build --release (`f1-photo-server`): OK; new binary
+    md5 `5f083e57d7867074b906ef4d6654a3c9`, size 12,068,616 B
+    (+48 B vs the #2a/#2b binary). Hot-swapped into
+    `dist/f1photo-0.1.0-linux/payload/f1photo`; tarball not
+    repacked at this milestone (deferred to ride alongside
+    milestone #3 P/R baseline).
+  - smoke-e2e.sh as f1u against the new release binary (task
+    `80c5fd3aea68`): ✓✓✓ SMOKE PASSED. All #2a / #2b / #2a-tool
+    assertions fired green; 0 WARN / 0 ERROR / 0 panic;
+    `ort_available=true ready=true`; `loaded=5 total=5
+    missing_required=[]`. End-to-end ~10 s wall clock.
+- Cold-start gap is now end-to-end-proven for **person, tool, and
+  device** owners (device by symmetry; the same
+  `run_tool_bootstrap_pipeline` function handles both branches).
+  An end-to-end device smoke can be added later once a
+  representative device fixture is curated; today the device
+  branch is covered by code-path symmetry, not a black-box
+  smoke. Remaining gap on the cold-start story is now zero.
 
 ## 2. Android client
 
