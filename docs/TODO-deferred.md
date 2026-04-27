@@ -120,14 +120,11 @@ matching.
    detector to replace the COCO YOLOv8n in `models/object_detect.onnx`.
    Until then, the recall layer is doing the heavy lifting and accuracy
    is bottlenecked on the gallery quality, not the detector.
-2. Add an integration test that uses the bundled-pg + a checked-in
+2. ~~Add an integration test that uses the bundled-pg + a checked-in
    small-but-real face crop to verify at least one matched-bucket
-   `recognition_items` row is produced (the smoke assertion currently
-   covers the *unmatched* bucket on a freshly-seeded gallery). Tracked
-   as **milestone #2b** in `docs/v1.4.x-v1.5.0-roadmap.md`. The
-   bootstrap-path prerequisite (gallery seeding from `owner_type=person`
-   uploads) shipped in milestone #2a (commit 9a85f7c) — see
-   "### Milestone #2a status" below.
+   `recognition_items` row is produced.~~ ✅ **Done at milestone #2b**
+   (commit `e84cdd0`); the smoke now covers both buckets end-to-end.
+   See "### Milestone #2b status" below for the verification matrix.
 3. Optional: ship a real MobileNetV3 angle classifier into
    `models/angle_classify.onnx` if the recognition pipeline ever needs
    pose-aware gating; not required for matching as it stands.
@@ -183,6 +180,57 @@ Owner-known person photo bootstrap shipped at commit **9a85f7c**
     0 ERROR / 0 panic, `ort_available=true ready=true`. The bootstrap
     branch only kicks in on `owner_type=person`; wo_raw is fall-through
     clean.
+
+### Milestone #2b status (2026-04-27 +08)
+
+Face fixture + matched-bucket smoke shipped at commit **e84cdd0**
+(`feat(smoke): face fixture + matched-bucket assertion (milestone
+#2b)`). This is the end-to-end black-box proof of the milestone #2a
+wiring — no Rust source touched; only `packaging/scripts/smoke-e2e.sh`
+and a new `tests/fixtures/face/` directory.
+
+- Fixture: `tests/fixtures/face/portrait_001.jpg` — 512×512 RGB JPEG,
+  66,489 B, sha256 `74139dcfd87ccd42855a9e35bcd6df9d08640d041f77d29115e381bdebf60a59`.
+  Source: `skimage.data.astronaut()` (NASA portrait of astronaut Eileen
+  Collins; public-domain under 17 U.S.C. § 105). Provenance and license
+  metadata live in `tests/fixtures/face/MANIFEST.json` and the
+  long-form rationale (including the GAN domain-gap lesson) in
+  `tests/fixtures/face/README.md`.
+- The smoke now layers a 13-assertion bootstrap-then-recall section on
+  top of the existing wo_raw assertion. **Project A** uploads the
+  fixture as `owner_type=person` and asserts: seed photo terminal
+  `matched`; `identity_embeddings('initial')` row count for the person
+  ≥ 1; `detections` matched row count ≥ 1; `recognition_items` row
+  count == 0 (owner-known seeds must NOT write recognition_items).
+  **Project B** then uploads the SAME fixture as `owner_type=wo_raw`
+  and asserts: photo terminal `matched`; `detections` matched row
+  count ≥ 1 with `matched_owner_id` pointing back at the project-A
+  person; `recognition_items` matched-bucket count ≥ 1. The two-project
+  layout is forced by the `(project_id, hash)` UNIQUE constraint on
+  `photos`; the cross-project recall hit works because
+  `inference/recall.rs` is workspace-global (filters on `owner_type`,
+  never on `project_id`).
+- GAN domain-gap discovery: the first fixture candidate was a
+  StyleGAN2 face from `thispersondoesnotexist.com`. SCRFD `det_500m`
+  returned `face_count=0` on it even though it looked like a clean
+  portrait. Replacing it with a real photograph (the NASA astronaut
+  bundled in scikit-image) made SCRFD detection reliable. The README
+  in `tests/fixtures/face/` records this as a permanent lesson: when
+  a smoke needs `face_count >= 1`, use a *real* photograph, not a
+  generative-model output.
+- Verification at #2b:
+  - No Rust source touched → cargo fmt / cargo clippy / cargo test
+    --lib unchanged from #2a (still 30/30 passing). Release binary
+    md5 `af8b065712e27253910cb2b33cc43c08` is bit-identical to #2a.
+  - smoke-e2e.sh as f1u against the same #2a release binary (task
+    `5595b596d0c2`): ✓✓✓ SMOKE PASSED. All 13 new #2b assertions
+    fired green; the existing #2a assertions (queue drain, baseline
+    wo_raw `unmatched`, `recognition_items.total=1 status=unmatched`,
+    0 WARN / 0 ERROR / 0 panic, `ort_available=true ready=true`)
+    held.
+- Cold-start gap is now end-to-end-proven for **person** owners. The
+  remaining gap is **milestone #2a-tool** (owner-known tool/device
+  bootstrap), still tracked as deferred in the roadmap.
 
 ## 2. Android client
 
