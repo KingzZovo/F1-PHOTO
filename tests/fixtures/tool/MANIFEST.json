@@ -1,0 +1,29 @@
+{
+  "fixture": "tool_001",
+  "file": "tool_001.jpg",
+  "size_bytes": 71303,
+  "sha256": "db702e664b962a9daec5ef9395a7ffe7290aa9ef91471a3886717fc1cceaf325",
+  "width": 600,
+  "height": 400,
+  "format": "JPEG",
+  "jpeg_quality": 90,
+  "jpeg_progressive": false,
+  "jpeg_optimize": true,
+  "colorspace": "RGB",
+  "source": "skimage.data.coffee",
+  "depicts_real_object": true,
+  "object_label": "coffee_cup",
+  "coco_class_used_at_inference": 41,
+  "coco_class_label": "cup",
+  "license": "public_domain",
+  "license_basis": "skimage bundled asset, no per-file copyright notice; scikit-image data submodule",
+  "license_url": "https://github.com/scikit-image/scikit-image/tree/main/skimage/data",
+  "introduced_at_milestone": "2a-tool",
+  "introduced_at_commit": null,
+  "introduced_at_date": "2026-04-27",
+  "used_by": [
+    "packaging/scripts/smoke-e2e.sh (#2a-tool tool/device bootstrap assertions)"
+  ],
+  "regenerate": "python3 -c \"from skimage.data import coffee; from PIL import Image; Image.fromarray(coffee(),'RGB').save('tests/fixtures/tool/tool_001.jpg','JPEG',quality=90,optimize=True,progressive=False)\"",
+  "notes": "YOLOv8n COCO returns class 41 'cup' on this image. Bootstrap pipeline ignores class labels (used strictly as region proposer); DINOv2-small CLS embedding zero-padded to 512d is what gets seeded into identity_embeddings."
+}

@@ -44,9 +44,11 @@
 //! subsequent `wo_raw` uploads of the same person actually hit the gallery.
 //! Without this branch the gallery is permanently empty (the standard
 //! pipeline only emits `incremental` rows at score ≥ 0.95 and `manual` rows
-//! from corrected `recognition_items`). `tool`/`device` bootstrap is tracked
-//! as the follow-up milestone #2a-tool; for now those uploads still run the
-//! standard pipeline and log a warning that the gallery will not be seeded.
+//! from corrected `recognition_items`). The same shape applies to
+//! `owner_type=tool|device` (milestone #2a-tool): YOLOv8 region-proposes,
+//! DINOv2-small embeds each crop, and the per-crop embeddings are seeded
+//! into `identity_embeddings` with `source='initial'` anchored to the
+//! asserted owner — no recall, no `recognition_items`, no augment.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -374,15 +376,11 @@ async fn run_real_pipeline(state: &AppState, job: &Job) -> Result<Outcome> {
                 return Ok(aggregate_outcome(&buckets));
             }
             "tool" | "device" => {
-                tracing::warn!(
-                    photo_id = %job.photo_id,
-                    owner_type = ot,
-                    owner_id = %oid,
-                    "tool/device bootstrap path not yet implemented; running \
-                     standard pipeline — gallery will NOT be seeded by this \
-                     upload (milestone #2a-tool tracks this follow-up)"
-                );
-                // fall through to standard pipeline below
+                let buckets = run_tool_bootstrap_pipeline(
+                    state, job, &img, src_w, src_h, project_id, ot, oid,
+                )
+                .await?;
+                return Ok(aggregate_outcome(&buckets));
             }
             _ => {} // wo_raw — handled by standard pipeline below
         }
@@ -783,6 +781,189 @@ async fn run_face_bootstrap_pipeline(
         owner_id = %owner_id,
         faces_seeded = buckets.len(),
         "owner-known person photo seeded gallery as 'initial'"
+    );
+
+    Ok(buckets)
+}
+
+/// Owner-known tool/device photo bootstrap (milestone #2a-tool).
+///
+/// Symmetric to [`run_face_bootstrap_pipeline`]. When a photo is uploaded
+/// asserting `owner_type=tool|device owner_id=<O>`, this pipeline replaces
+/// the standard recall path. YOLOv8 region-proposes and DINOv2-small
+/// embeds each crop, but each embedding is *seeded* into
+/// `identity_embeddings` with `source='initial'` anchored to `<O>` — and
+/// no recall, no `recognition_items`, no augment. The detection rows are
+/// still written so that the audit trail / per-photo boxes remain
+/// available, but they are stamped `match_status='matched'` against the
+/// asserted owner with `matched_score=1.0` (the uploader, not inference,
+/// is the source of truth).
+///
+/// All proposed boxes are attributed to the same owner. yolov8n is
+/// COCO-trained: its class labels are unrelated to F1-photo's
+/// tools/devices taxonomy. We use it strictly as a region proposer (same
+/// as the standard tool pipeline); the per-crop DINOv2 CLS embedding,
+/// L2-normalised and zero-padded to 512 via [`recall::pad_to_512`], is
+/// what gets seeded.
+///
+/// `target_type` mirrors `owner_type` per the `detect_target` enum:
+/// `'tool'` for tool owners, `'device'` for device owners.
+///
+/// Photos with zero proposed boxes log a warning and write nothing — the
+/// upload itself still succeeded; it just didn't produce a usable seed.
+/// Unlike [`run_tool_pipeline`] there is *no* whole-image fallback: that
+/// fallback writes `recognition_items`, which is the wo_raw queue, and
+/// must not contain owner-known seeds.
+///
+/// `owner_type` is `"tool"` or `"device"`; the caller (the dispatcher in
+/// [`run_real_pipeline`]) is responsible for that contract.
+#[allow(clippy::too_many_arguments)]
+async fn run_tool_bootstrap_pipeline(
+    state: &AppState,
+    job: &Job,
+    img: &image::DynamicImage,
+    src_w: u32,
+    src_h: u32,
+    project_id: Uuid,
+    owner_type: &str,
+    owner_id: Uuid,
+) -> Result<Vec<recall::Bucket>> {
+    let pool = &state.db;
+    let det_session = state
+        .models
+        .get(ModelKind::ObjectDetect)
+        .ok_or_else(|| anyhow!("ObjectDetect session not loaded"))?;
+    let emb_session = state
+        .models
+        .get(ModelKind::GenericEmbed)
+        .ok_or_else(|| anyhow!("GenericEmbed session not loaded"))?;
+
+    // YOLOv8 preprocess: letterbox to 640x640 + Norm::Unit (px / 255).
+    let (canvas, lb) = preprocess::letterbox(img, yolov8::INPUT_SIZE);
+    let nchw = preprocess::to_nchw(&canvas, preprocess::Norm::Unit);
+    let dims = nchw.shape().to_vec();
+    let data: Vec<f32> = nchw.iter().copied().collect();
+    let yolo_input = ort::value::Tensor::from_array((dims, data))?;
+    let yolo_outputs = det_session.run(ort::inputs![yolo_input]?)?;
+
+    let out_name: String = det_session
+        .outputs
+        .first()
+        .ok_or_else(|| anyhow!("ObjectDetect has no outputs"))?
+        .name
+        .clone();
+    let view = yolo_outputs[out_name.as_str()].try_extract_tensor::<f32>()?;
+    let flat: Vec<f32> = view.iter().copied().collect();
+    let dets = yolov8::decode_outputs(
+        &flat,
+        lb,
+        src_w,
+        src_h,
+        yolov8::DEFAULT_CONF,
+        yolov8::DEFAULT_IOU,
+    )?;
+
+    tracing::info!(
+        job_id = job.id,
+        photo_id = %job.photo_id,
+        owner_type = owner_type,
+        owner_id = %owner_id,
+        object_count = dets.len(),
+        "YOLOv8 detected objects (owner-known bootstrap path)"
+    );
+
+    if dets.is_empty() {
+        tracing::warn!(
+            photo_id = %job.photo_id,
+            owner_type = owner_type,
+            owner_id = %owner_id,
+            "owner-known tool/device photo had zero proposed boxes; nothing seeded into identity_embeddings"
+        );
+        return Ok(Vec::new());
+    }
+
+    let mut buckets: Vec<recall::Bucket> = Vec::with_capacity(dets.len());
+
+    for det in &dets {
+        // 224x224 DINOv2 input + ImageNet mean/std over the bbox crop.
+        let nchw = preprocess::crop_to_nchw(img, det.bbox, 224, preprocess::Norm::ImageNet);
+        let dims = nchw.shape().to_vec();
+        let data: Vec<f32> = nchw.iter().copied().collect();
+        let pixel_values = ort::value::Tensor::from_array((dims, data))?;
+        let outputs = emb_session.run(ort::inputs![pixel_values]?)?;
+
+        // DINOv2-small output: (B=1, 257, 384). Token 0 = CLS embedding.
+        let raw_view = outputs["last_hidden_state"].try_extract_tensor::<f32>()?;
+        let shape = raw_view.shape().to_vec();
+        if shape.len() != 3 || shape[1] == 0 || shape[2] == 0 {
+            return Err(anyhow!(
+                "DINOv2 output has unexpected shape {:?}; expected (B, T, D)",
+                shape
+            ));
+        }
+        let dim = shape[2];
+        let mut emb: Vec<f32> = (0..dim).map(|i| raw_view[[0, 0, i]]).collect();
+        recall::l2_normalize(&mut emb);
+        let emb_512 = recall::pad_to_512(&emb);
+
+        let bbox_json = serde_json::json!({
+            "x1": det.bbox.0,
+            "y1": det.bbox.1,
+            "x2": det.bbox.2,
+            "y2": det.bbox.3,
+            "class_id": det.class_id,
+            "source": "yolov8",
+        });
+        let v_pg = recall::encode_vector(&emb_512);
+
+        // Persist detection row anchored directly to the asserted owner.
+        // target_type mirrors owner_type per the detect_target enum.
+        sqlx::query(
+            "INSERT INTO detections \
+             (project_id, photo_id, target_type, bbox, score, embedding, \
+              match_status, matched_owner_type, matched_owner_id, matched_score) \
+             VALUES ($1, $2, $3::detect_target, $4, $5, $6::vector, \
+                     'matched'::match_status, $7::owner_type, $8, $9)",
+        )
+        .bind(project_id)
+        .bind(job.photo_id)
+        .bind(owner_type)
+        .bind(&bbox_json)
+        .bind(det.score)
+        .bind(&v_pg)
+        .bind(owner_type)
+        .bind(owner_id)
+        .bind(1.0_f32)
+        .execute(pool)
+        .await?;
+
+        // Seed the gallery: an `'initial'` row anchored to this owner. This
+        // is the cold-start identity_embeddings write that the rest of the
+        // pipeline depends on for matched/learning to ever fire on later
+        // wo_raw uploads of the same tool/device.
+        sqlx::query(
+            "INSERT INTO identity_embeddings \
+             (owner_type, owner_id, embedding, source, source_photo, source_project) \
+             VALUES ($1::owner_type, $2, $3::vector, 'initial'::embedding_source, $4, $5)",
+        )
+        .bind(owner_type)
+        .bind(owner_id)
+        .bind(&v_pg)
+        .bind(job.photo_id)
+        .bind(project_id)
+        .execute(pool)
+        .await?;
+
+        buckets.push(recall::Bucket::Matched);
+    }
+
+    tracing::info!(
+        job_id = job.id,
+        photo_id = %job.photo_id,
+        owner_type = owner_type,
+        owner_id = %owner_id,
+        crops_seeded = buckets.len(),
+        "owner-known tool/device photo seeded gallery as 'initial'"
     );
 
     Ok(buckets)

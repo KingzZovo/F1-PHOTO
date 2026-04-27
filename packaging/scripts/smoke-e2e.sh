@@ -337,6 +337,12 @@ FACE_FIXTURE="$ROOT/tests/fixtures/face/portrait_001.jpg"
     echo "  see tests/fixtures/face/README.md for how to regenerate." >&2
     exit 1
 }
+TOOL_FIXTURE="$ROOT/tests/fixtures/tool/tool_001.jpg"
+[[ -f "$TOOL_FIXTURE" ]] || {
+    echo "✗ tool fixture missing: $TOOL_FIXTURE" >&2
+    echo "  see tests/fixtures/tool/README.md for how to regenerate." >&2
+    exit 1
+}
 
 # psql wrapper for direct DB assertions against the bundled-pg.
 PSQL_BIN="$ROOT/bundled-pg/bin/psql"
@@ -480,6 +486,131 @@ fi
 echo "  ✓ wo_raw recognition_items matched rows: $WORAW_RI_MATCHED"
 
 echo "✓ milestone #2b: bootstrap-then-recall flow proven end-to-end"
+
+# =====================================================================
+# Milestone #2a-tool: owner-known tool/device cold-start.
+# =====================================================================
+# Symmetric to #2a/#2b: an owner_type=tool upload should write
+# `identity_embeddings` rows with `source='initial'` anchored to the
+# asserted tool, mark its `detections` rows matched against that tool,
+# and NOT enter the wo_raw `recognition_items` queue. A subsequent
+# wo_raw upload of the same fixture in project B must then recall back
+# to the tool and produce a matched recognition_items row.
+#
+# Fixture: tests/fixtures/tool/tool_001.jpg (skimage coffee, PD).
+# YOLOv8n is the region proposer (COCO class 41 'cup'); DINOv2-small is
+# the per-crop embedding. Bootstrap pipeline ignores class labels.
+# =====================================================================
+
+echo "▶ #2a-tool: create tool master record (sn=T-2A-001)"
+assert_http 201 POST "$BASE/api/tools" -H "$AUTH_H" -H 'content-type: application/json' \
+    -d '{"sn":"T-2A-001","name":"Smoke Tool 2A","category":"wrench"}'
+TOOL_ID="$(jq_get "['id']")"
+echo "  tool_id=$TOOL_ID"
+
+echo "▶ #2a-tool: upload fixture as owner_type=tool (gallery seed)"
+assert_http 202 POST "$BASE/api/projects/$PROJECT_ID/photos" -H "$AUTH_H" \
+    -F "file=@$TOOL_FIXTURE;type=image/jpeg" \
+    -F "owner_type=tool" \
+    -F "sn=T-2A-001" \
+    -F "angle=front"
+TOOL_SEED_PHOTO_ID="$(jq_get "['id']")"
+echo "  tool_seed_photo_id=$TOOL_SEED_PHOTO_ID"
+
+wait_queue_drain "#2a-tool tool seed"
+
+echo "▶ #2a-tool: tool seed photo terminal status must be 'matched'"
+assert_http 200 GET "$BASE/api/projects/$PROJECT_ID/photos/$TOOL_SEED_PHOTO_ID" -H "$AUTH_H"
+TOOL_SEED_STATUS="$(jq_get "['status']")"
+if [[ "$TOOL_SEED_STATUS" != "matched" ]]; then
+    echo "✗ tool seed photo status: expected matched, got '$TOOL_SEED_STATUS'" >&2
+    echo "  this means the bootstrap path either failed or YOLOv8 found 0 boxes in the fixture." >&2
+    tail -120 "$LOG" >&2
+    exit 1
+fi
+echo "  ✓ tool seed photo status=matched"
+
+echo "▶ #2a-tool: identity_embeddings has >=1 'initial' row anchored to tool"
+TOOL_INIT_ROWS="$(psql_scalar \
+    "SELECT count(*) FROM identity_embeddings \
+     WHERE owner_type='tool' AND owner_id='$TOOL_ID' AND source='initial'\
+       AND source_photo='$TOOL_SEED_PHOTO_ID'")"
+if [[ -z "$TOOL_INIT_ROWS" || "$TOOL_INIT_ROWS" -lt 1 ]]; then
+    echo "✗ identity_embeddings('initial') rows for tool $TOOL_ID = '$TOOL_INIT_ROWS', expected >=1" >&2
+    echo "  this is the cold-start row that lets later wo_raw recall ever hit the gallery." >&2
+    tail -120 "$LOG" >&2
+    exit 1
+fi
+echo "  ✓ identity_embeddings('initial') rows for tool: $TOOL_INIT_ROWS"
+
+echo "▶ #2a-tool: detections has >=1 matched row for tool seed photo"
+TOOL_SEED_DET_MATCHED="$(psql_scalar \
+    "SELECT count(*) FROM detections \
+     WHERE photo_id='$TOOL_SEED_PHOTO_ID' AND target_type='tool' \
+       AND match_status='matched' AND matched_owner_type='tool' \
+       AND matched_owner_id='$TOOL_ID'")"
+if [[ -z "$TOOL_SEED_DET_MATCHED" || "$TOOL_SEED_DET_MATCHED" -lt 1 ]]; then
+    echo "✗ tool seed detections matched rows = '$TOOL_SEED_DET_MATCHED', expected >=1" >&2
+    exit 1
+fi
+echo "  ✓ tool seed detections matched rows: $TOOL_SEED_DET_MATCHED"
+
+echo "▶ #2a-tool: owner-known tool seed must NOT produce recognition_items rows"
+TOOL_SEED_RI="$(psql_scalar "SELECT count(*) FROM recognition_items WHERE photo_id='$TOOL_SEED_PHOTO_ID'")"
+if [[ "$TOOL_SEED_RI" != "0" ]]; then
+    echo "✗ owner-known tool seed wrote $TOOL_SEED_RI recognition_items rows, expected 0" >&2
+    echo "  seeds are gallery-fill only; they must not appear in the wo_raw recognition queue UI." >&2
+    exit 1
+fi
+echo "  ✓ no recognition_items rows for tool seed photo"
+
+echo "▶ #2a-tool: upload SAME fixture as wo_raw in project B (cross-project recall)"
+assert_http 202 POST "$BASE/api/projects/$PROJECT2_ID/photos" -H "$AUTH_H" \
+    -F "file=@$TOOL_FIXTURE;type=image/jpeg" \
+    -F "owner_type=wo_raw" \
+    -F "wo_id=$WO2_ID" \
+    -F "angle=front"
+TOOL_WORAW_PHOTO_ID="$(jq_get "['id']")"
+echo "  tool_wo_raw_photo_id=$TOOL_WORAW_PHOTO_ID"
+
+wait_queue_drain "#2a-tool wo_raw"
+
+echo "▶ #2a-tool: wo_raw photo terminal status must be 'matched' (recall hit)"
+assert_http 200 GET "$BASE/api/projects/$PROJECT2_ID/photos/$TOOL_WORAW_PHOTO_ID" -H "$AUTH_H"
+TOOL_WORAW_STATUS="$(jq_get "['status']")"
+if [[ "$TOOL_WORAW_STATUS" != "matched" ]]; then
+    echo "✗ tool wo_raw photo status: expected matched, got '$TOOL_WORAW_STATUS'" >&2
+    echo "  recall layer did not hit the seed. Check DINOv2 embedding quality / threshold (Thresholds::DEFAULT match_lower=0.62)." >&2
+    tail -120 "$LOG" >&2
+    exit 1
+fi
+echo "  ✓ tool wo_raw photo status=matched"
+
+echo "▶ #2a-tool: detections has >=1 matched row pointing at our tool"
+TOOL_WORAW_DET_MATCHED="$(psql_scalar \
+    "SELECT count(*) FROM detections \
+     WHERE photo_id='$TOOL_WORAW_PHOTO_ID' AND match_status='matched' \
+       AND matched_owner_type='tool' AND matched_owner_id='$TOOL_ID'")"
+if [[ -z "$TOOL_WORAW_DET_MATCHED" || "$TOOL_WORAW_DET_MATCHED" -lt 1 ]]; then
+    echo "✗ tool wo_raw detections matched rows for $TOOL_ID = '$TOOL_WORAW_DET_MATCHED', expected >=1" >&2
+    echo "  the wo_raw photo did not match back to the seeded tool." >&2
+    tail -120 "$LOG" >&2
+    exit 1
+fi
+echo "  ✓ tool wo_raw detections matched rows: $TOOL_WORAW_DET_MATCHED"
+
+echo "▶ #2a-tool: recognition_items has >=1 matched row for tool wo_raw photo"
+TOOL_WORAW_RI_MATCHED="$(psql_scalar \
+    "SELECT count(*) FROM recognition_items \
+     WHERE photo_id='$TOOL_WORAW_PHOTO_ID' AND status='matched' \
+       AND suggested_owner_type='tool' AND suggested_owner_id='$TOOL_ID'")"
+if [[ -z "$TOOL_WORAW_RI_MATCHED" || "$TOOL_WORAW_RI_MATCHED" -lt 1 ]]; then
+    echo "✗ tool wo_raw recognition_items matched rows = '$TOOL_WORAW_RI_MATCHED', expected >=1" >&2
+    exit 1
+fi
+echo "  ✓ tool wo_raw recognition_items matched rows: $TOOL_WORAW_RI_MATCHED"
+
+echo "✓ milestone #2a-tool: tool/device cold-start proven end-to-end"
 
 echo "▶ master data: persons"
 assert_http 201 POST "$BASE/api/persons" -H "$AUTH_H" -H 'content-type: application/json' \
