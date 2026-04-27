@@ -301,6 +301,53 @@ guarantee from `person` to all three owner kinds.
   branch is covered by code-path symmetry, not a black-box
   smoke. Remaining gap on the cold-start story is now zero.
 
+### Milestone #2c follow-ups (face P/R baseline, 2026-04-27 +08)
+
+Milestone #2c (commit `ea6e8eb`) landed the first P/R measurement
+against the real face recall path: Western (LFW funneled, n=20)
+P=1.0 R=0.125 F1=0.222 at `Thresholds::DEFAULT { low=0.50,
+match=0.62 }`; Eastern (jack139/face-dataset, n=10) P/R undefined
+because SCRFD `det_500m` returns `face_count=0` on all 10 photos
+even after 256×256 bicubic upscaling. Threshold sweep finds best
+F1=0.500 at `match_lower=0.40` with zero false positives across the
+6 distractor queries. Two follow-ups are queued:
+
+- **`#2c-asia`** — widen the Eastern bucket. SCRFD `det_500m` needs
+  a higher-quality Asian face dataset; the jack139/face-dataset
+  `train2` crops are too small (native 140×147) for the detector
+  even after upscaling. Candidates, in order of expected upstream
+  quality:
+  - **A.** CASIA-WebFace via
+    [`face.evoLVe`'s Data-Zoo](https://github.com/ZhaoJ9014/face.evoLVe.PyTorch).
+  - **B.** Asian-Celeb (faces_glintasia) via
+    [insightface's Dataset-Zoo](https://github.com/deepinsight/insightface/wiki/Dataset-Zoo).
+  - **C.** RMFD (Real-World Masked Face Dataset) via
+    [X-zhangyang/Real-World-Masked-Face-Dataset](https://github.com/X-zhangyang/Real-World-Masked-Face-Dataset)
+    — useful even without masks for the unmasked split.
+  Acceptance: ≥ 4 Asian enrolled identities with `face_det_rate ≥ 0.8`
+  on the resulting query photos, paired with the existing 8 Western
+  identities; re-run `tools/eval_pr.py` and refresh
+  `docs/baselines/2c-recognition-pr.json`.
+- **`#2c-tune`** — land the threshold change. Once `#2c-asia` widens
+  the dataset (so we have non-trivial distractor and Eastern signal
+  to confirm the FP rate), edit `server/src/inference/recall.rs:37-39`
+  `Thresholds::DEFAULT` from `{ low_lower=0.50, match_lower=0.62,
+  augment_upper=0.95 }` toward the data-supported sweet spot — the
+  current evidence points at `{ low_lower=0.30, match_lower=0.40,
+  augment_upper=0.95 }` (P=1.0 R=0.333 F1=0.500 at #2c, 0.14 safety
+  margin to distractor max top1_score=0.2612). Re-run smoke + the
+  P/R harness; refresh the baselines JSON and the
+  `docs/recognition_pipeline.md` section 12 numbers.
+
+Tool / device P/R baseline (the other half of roadmap row #3) is
+still pending; it sits behind milestone #2 (real-dataset smoke
+baseline with curated tool/device fixtures) and #5 (domain-specific
+tool/device detector replacing YOLOv8n COCO). The eval harness in
+`tools/eval_pr.py` is intentionally face-only at this milestone; a
+symmetric tool/device variant can reuse the same orchestration
+(server boot + project + WO + master records + psql readback)
+with `owner_type=tool|device` paths once those fixtures land.
+
 ## 2. Android client
 
 This is the original deferral; see [`TODO-android.md`](TODO-android.md).
