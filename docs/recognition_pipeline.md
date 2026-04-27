@@ -266,3 +266,108 @@ sudo -u f1u bash -lc 'cd /root/F1-photo && bash packaging/scripts/recognition-pr
 # Writes /tmp/pr-baseline.json
 # Archived run at docs/baselines/2c-recognition-pr.json
 ```
+
+## 13. Real-dataset distribution baseline (milestone #2 — face slice)
+
+Milestone #2 (`real-dataset smoke baseline`) measures the *shape* of what
+the live ONNX pipeline emits when fed real photos as `owner_type=wo_raw`,
+without needing labelled identities. It complements #2c (which measures
+P/R for face recognition) by characterizing per-photo `face_count`,
+`tool_count`, `device_count`, and `recognition_items.total`.
+
+### Fixture
+
+Reuses the 42-photo #2c fixture (`tests/fixtures/face/baseline/`,
+sklearn-LFW funneled + jack139/face-dataset Asian celeb crops, 12
+enrolled + 3 distractor identities). This is intentionally a face-only
+slice; the tool / device slice is tracked as follow-up `#2-tool`
+(waiting on a curated tool / device dataset such as a COCO val2017
+subset filtered to operator-relevant classes).
+
+### Methodology
+
+1. The orchestrator `packaging/scripts/distribution-baseline.sh` boots a
+   bundled-PG-backed server (same sequence as
+   `recognition-pr-baseline.sh`).
+2. `tools/eval_distribution.py` logs in, creates a project + work order,
+   uploads every photo as `owner_type=wo_raw` (no person / tool / device
+   seeding — distribution capture only), and waits on
+   `/api/admin/queue/stats` until
+   `queue_pending + queue_locked + photo_pending + photo_processing == 0`
+   for two consecutive polls.
+3. After drain, raw rows are pulled from `detections` and
+   `recognition_items` via the bundled `psql` client (no `psycopg2`
+   runtime dependency) and aggregated into per-photo rows + histograms.
+4. Output: JSON report with `meta`, `per_photo`, and `distributions`
+   sections. Archived at `docs/baselines/2-distribution-face-baseline.json`.
+
+### Results (n = 42, face-only fixture)
+
+| dimension | bucket | count |
+|---|---|---|
+| `face_count` | 0 | 14 |
+| `face_count` | 1 | 23 |
+| `face_count` | 2 | 4 |
+| `face_count` | 3+ | 1 |
+| `tool_count` | 0 | 0 |
+| `tool_count` | 1 | 30 |
+| `tool_count` | 2+ | 12 |
+| `device_count` | 0 | 42 |
+| `recognition_items_total` | 0 | 0 |
+| `recognition_items_total` | 1 | 14 |
+| `recognition_items_total` | 2 | 15 |
+| `recognition_items_total` | 3+ | 13 |
+| `photo_status` | unmatched | 42 |
+| `recognition_items_status` | unmatched | 91 |
+
+### Score quantiles
+
+| target_type | min | p25 | median | p75 | max |
+|---|---|---|---|---|---|
+| face   | 0.551 | 0.776 | 0.792 | 0.831 | 0.855 |
+| tool   | 0.268 | 0.416 | 0.668 | 0.746 | 1.000 |
+| device | —     | —     | —     | —     | —     |
+
+### Findings
+
+1. **YOLOv8n COCO produces ubiquitous `tool` false positives on face
+   crops.** Every one of the 42 face-only photos triggered at least one
+   `target_type='tool'` detection, with median score 0.67 and max 1.00.
+   This cannot be a real positive — the fixture is curated face crops,
+   not tools — so it directly validates milestone #5 (replace YOLOv8n
+   COCO with a domain-specific tool detector trained on operator-tool
+   classes only). Until that ships, downstream `recognition_items` rows
+   for tools should be treated as low-precision; the operator UI must
+   not auto-confirm tool matches even at high score.
+2. **`device` class is silent on out-of-domain crops.** Zero `device`
+   detections across all 42 photos. YOLOv8n COCO's "device" mapping is
+   well-behaved on face inputs, in contrast to its "tool" mapping.
+3. **SCRFD face-detection rate is 28 / 42 ≈ 66.7 %** (`face_count ≥ 1`),
+   matching the #2c finding that the 14 Eastern jack139 crops fail
+   detection at 256² bicubic upscaling. Face confidence on detected
+   crops is high and tightly clustered (p25 = 0.776, p75 = 0.831), so
+   the SCRFD score floor is not the problem — it is a domain-gap recall
+   issue on Asian-face crops, queued under `#2c-asia`.
+4. **`recognition_items.total` per photo is dominated by tool false
+   positives.** Mean `recognition_items_total ≈ 91 / 42 ≈ 2.17`; the
+   `face_count` mean is `(0×14 + 1×23 + 2×4 + 3×1) / 42 ≈ 0.81`,
+   meaning roughly 1.36 of the 2.17 items per photo come from spurious
+   tool detections. Replacing the detector (#5) is therefore expected
+   to drop the operator's per-photo verification load by ~60 %.
+
+### Reproduce
+
+```sh
+sudo -u f1u bash -lc 'cd /root/F1-photo && bash packaging/scripts/distribution-baseline.sh'
+# Defaults: PHOTOS_GLOB=tests/fixtures/face/baseline/**/*.jpg
+# Writes /tmp/distribution-baseline.json
+# Archived face slice at docs/baselines/2-distribution-face-baseline.json
+```
+
+To run on a different photo set (e.g. a future tool / device fixture):
+
+```sh
+PHOTOS_GLOB='tests/fixtures/tool/**/*.jpg' \
+REPORT_PATH=/tmp/dist-tool.json \
+sudo -u f1u bash -lc 'cd /root/F1-photo && bash packaging/scripts/distribution-baseline.sh'
+```
