@@ -75,6 +75,45 @@ async fn main() -> Result<()> {
                 )
                 .await
             }
+            RetrainDetectorAction::Train {
+                cycle_dir,
+                base_weights,
+                epochs,
+                imgsz,
+                export_imgsz,
+                freeze,
+                batch,
+                workers,
+                device,
+                training_dir,
+                runs_dir,
+                run_name,
+                candidate_out,
+                opset,
+                python,
+                script,
+            } => {
+                retrain_train(
+                    cfg,
+                    &cycle_dir,
+                    &base_weights,
+                    epochs,
+                    imgsz,
+                    export_imgsz,
+                    freeze,
+                    batch,
+                    workers,
+                    &device,
+                    training_dir.as_deref(),
+                    runs_dir.as_deref(),
+                    run_name.as_deref(),
+                    candidate_out.as_deref(),
+                    opset,
+                    python.as_deref(),
+                    script.as_deref(),
+                )
+                .await
+            }
         },
     }
 }
@@ -401,5 +440,139 @@ async fn retrain_prepare(
             r.eligible, r.min_corrections
         );
     }
+    Ok(())
+}
+
+/// Resolve the python interpreter to use for `tools/retrain_train.py`.
+/// Precedence: explicit override > `$F1P_PYTHON` env > `python3` on PATH.
+fn resolve_python(override_path: Option<&str>) -> PathBuf {
+    if let Some(s) = override_path {
+        return PathBuf::from(s);
+    }
+    if let Ok(s) = std::env::var("F1P_PYTHON") {
+        if !s.is_empty() {
+            return PathBuf::from(s);
+        }
+    }
+    PathBuf::from("python3")
+}
+
+/// Resolve `tools/retrain_train.py`. Precedence: explicit override >
+/// `$F1P_RETRAIN_SCRIPT` env > `<binary_dir>/../tools/retrain_train.py`
+/// (deploy layout: `payload/f1photo` next to `tools/`) > literal
+/// `tools/retrain_train.py` (development layout, cwd at repo root).
+fn resolve_retrain_script(override_path: Option<&str>) -> PathBuf {
+    if let Some(s) = override_path {
+        return PathBuf::from(s);
+    }
+    if let Ok(s) = std::env::var("F1P_RETRAIN_SCRIPT") {
+        if !s.is_empty() {
+            return PathBuf::from(s);
+        }
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            for rel in ["../tools/retrain_train.py", "tools/retrain_train.py"] {
+                let p = dir.join(rel);
+                if p.is_file() {
+                    return p;
+                }
+            }
+        }
+    }
+    PathBuf::from("tools/retrain_train.py")
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn retrain_train(
+    cfg: Config,
+    cycle_dir: &str,
+    base_weights: &str,
+    epochs: u32,
+    imgsz: u32,
+    export_imgsz: u32,
+    freeze: u32,
+    batch: u32,
+    workers: u32,
+    device: &str,
+    training_dir_override: Option<&str>,
+    runs_dir_override: Option<&str>,
+    run_name_override: Option<&str>,
+    candidate_out_override: Option<&str>,
+    opset: u32,
+    python_override: Option<&str>,
+    script_override: Option<&str>,
+) -> Result<()> {
+    let cycle_dir_pb = PathBuf::from(cycle_dir);
+    if !cycle_dir_pb.is_dir() {
+        bail!("cycle-dir is not a directory: {}", cycle_dir_pb.display());
+    }
+    let training_dir = resolve_training_dir(&cfg, training_dir_override);
+    let run_name = run_name_override
+        .map(|s| s.to_string())
+        .or_else(|| {
+            cycle_dir_pb
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+        })
+        .unwrap_or_else(|| "train".to_string());
+    let runs_dir = match runs_dir_override {
+        Some(s) => PathBuf::from(s),
+        None => training_dir.join("runs"),
+    };
+    let candidate_out = match candidate_out_override {
+        Some(s) => PathBuf::from(s),
+        None => training_dir.join(format!("{run_name}.candidate.onnx")),
+    };
+    let summary_out = training_dir.join(format!("{run_name}.summary.json"));
+    let python = resolve_python(python_override);
+    let script = resolve_retrain_script(script_override);
+
+    println!("cycle_dir       : {}", cycle_dir_pb.display());
+    println!("training_dir    : {}", training_dir.display());
+    println!("runs_dir        : {}", runs_dir.display());
+    println!("run_name        : {}", run_name);
+    println!("candidate_out   : {}", candidate_out.display());
+    println!("summary_out     : {}", summary_out.display());
+    println!("python          : {}", python.display());
+    println!("script          : {}", script.display());
+    println!("epochs          : {}", epochs);
+    println!("imgsz / export  : {} / {}", imgsz, export_imgsz);
+    println!("freeze / batch  : {} / {}", freeze, batch);
+    println!("workers / device: {} / {}", workers, device);
+    println!("opset           : {}", opset);
+    println!();
+
+    let params = retrain::TrainParams {
+        cycle_dir: cycle_dir_pb,
+        base_weights: base_weights.to_string(),
+        epochs,
+        imgsz,
+        export_imgsz,
+        freeze,
+        batch,
+        workers,
+        device: device.to_string(),
+        runs_dir,
+        run_name,
+        candidate_out,
+        opset,
+        summary_out,
+        python,
+        script,
+    };
+
+    // `retrain::train` shells out to a long-running python process and
+    // does blocking I/O; offload it from the tokio runtime so the runtime
+    // is free even though the CLI has nothing else to do.
+    let report = tokio::task::spawn_blocking(move || retrain::train(&params)).await??;
+
+    println!("status               : {}", report.status);
+    println!("output_shape         : {:?}", report.output_shape);
+    println!("candidate_size_bytes : {}", report.candidate_size_bytes);
+    println!("candidate_out        : {}", report.candidate_out);
+    println!("best_pt              : {}", report.best_pt);
+    println!("train_seconds        : {:.1}", report.train_seconds);
+    println!("export_seconds       : {:.1}", report.export_seconds);
     Ok(())
 }

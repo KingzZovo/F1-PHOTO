@@ -30,8 +30,10 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Row};
+use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command as StdCommand;
 use uuid::Uuid;
 
 /// Aggregate roll-up emitted by [`stats`].
@@ -404,6 +406,190 @@ pub async fn prepare(
     })
 }
 
+/// Owned parameter bundle for [`train`].
+///
+/// Mirrors the argparse surface of `tools/retrain_train.py` so the
+/// Rust CLI subcommand `f1photo retrain-detector train` is a thin
+/// wrapper that forwards strongly-typed values into the python
+/// fine-tune pipeline.
+#[derive(Debug, Clone)]
+pub struct TrainParams {
+    pub cycle_dir: PathBuf,
+    pub base_weights: String,
+    pub epochs: u32,
+    pub imgsz: u32,
+    pub export_imgsz: u32,
+    pub freeze: u32,
+    pub batch: u32,
+    pub workers: u32,
+    pub device: String,
+    pub runs_dir: PathBuf,
+    pub run_name: String,
+    pub candidate_out: PathBuf,
+    pub opset: u32,
+    pub summary_out: PathBuf,
+    pub python: PathBuf,
+    pub script: PathBuf,
+}
+
+/// Structured JSON report written by `tools/retrain_train.py` to its
+/// `--summary-out` path. Kept permissive (`#[serde(default)]` on
+/// optional-ish fields) so future python additions don't break the
+/// Rust deserialiser; only `status` and `output_shape` are load-bearing.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RetrainTrainReport {
+    pub status: String,
+    #[serde(default)]
+    pub cycle_dir: String,
+    #[serde(default)]
+    pub base_weights: String,
+    #[serde(default)]
+    pub epochs: u32,
+    #[serde(default)]
+    pub imgsz: u32,
+    #[serde(default)]
+    pub export_imgsz: u32,
+    #[serde(default)]
+    pub freeze: u32,
+    #[serde(default)]
+    pub batch: u32,
+    #[serde(default)]
+    pub device: String,
+    #[serde(default)]
+    pub run_dir: String,
+    #[serde(default)]
+    pub best_pt: String,
+    #[serde(default)]
+    pub onnx_export: String,
+    #[serde(default)]
+    pub candidate_out: String,
+    #[serde(default)]
+    pub candidate_size_bytes: u64,
+    pub output_shape: Vec<i64>,
+    #[serde(default)]
+    pub train_seconds: f64,
+    #[serde(default)]
+    pub export_seconds: f64,
+}
+
+/// Build the argv that `tools/retrain_train.py` should be invoked with
+/// (without the leading interpreter; that is `params.python`). Pure
+/// function; no I/O. Exposed for unit tests so we can lock in the CLI
+/// surface without spawning python.
+pub fn build_train_args(params: &TrainParams) -> Vec<OsString> {
+    let mut a: Vec<OsString> = Vec::with_capacity(32);
+    a.push(params.script.as_os_str().to_owned());
+    a.push(OsString::from("--cycle-dir"));
+    a.push(params.cycle_dir.as_os_str().to_owned());
+    a.push(OsString::from("--base-weights"));
+    a.push(OsString::from(&params.base_weights));
+    a.push(OsString::from("--epochs"));
+    a.push(OsString::from(params.epochs.to_string()));
+    a.push(OsString::from("--imgsz"));
+    a.push(OsString::from(params.imgsz.to_string()));
+    a.push(OsString::from("--export-imgsz"));
+    a.push(OsString::from(params.export_imgsz.to_string()));
+    a.push(OsString::from("--freeze"));
+    a.push(OsString::from(params.freeze.to_string()));
+    a.push(OsString::from("--batch"));
+    a.push(OsString::from(params.batch.to_string()));
+    a.push(OsString::from("--workers"));
+    a.push(OsString::from(params.workers.to_string()));
+    a.push(OsString::from("--device"));
+    a.push(OsString::from(&params.device));
+    a.push(OsString::from("--runs-dir"));
+    a.push(params.runs_dir.as_os_str().to_owned());
+    a.push(OsString::from("--run-name"));
+    a.push(OsString::from(&params.run_name));
+    a.push(OsString::from("--candidate-out"));
+    a.push(params.candidate_out.as_os_str().to_owned());
+    a.push(OsString::from("--opset"));
+    a.push(OsString::from(params.opset.to_string()));
+    a.push(OsString::from("--summary-out"));
+    a.push(params.summary_out.as_os_str().to_owned());
+    a
+}
+
+/// Spawn `python tools/retrain_train.py ...`, wait for it to exit, then
+/// parse the JSON `--summary-out` file. Errors are bubbled with rich
+/// context so operators can read stdout/stderr inherited from the
+/// child process and combine that with the structured report.
+///
+/// This is intentionally a synchronous (`std::process::Command`)
+/// implementation: training runs for minutes-to-hours and the parent
+/// CLI process has nothing else to do. Callers in async contexts can
+/// wrap with `tokio::task::spawn_blocking`.
+pub fn train(params: &TrainParams) -> Result<RetrainTrainReport> {
+    // Sanity-check the cycle directory before paying for ultralytics startup.
+    let data_yaml = params.cycle_dir.join("data.yaml");
+    if !data_yaml.is_file() {
+        anyhow::bail!(
+            "cycle-dir is not a valid YOLO cycle (missing data.yaml): {}",
+            data_yaml.display()
+        );
+    }
+    if let Some(parent) = params.summary_out.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("create summary-out parent {}", parent.display()))?;
+        }
+    }
+    // Clear any stale summary so we can detect a child that exits 0
+    // without writing one (e.g. crashed before reaching the writer).
+    let _ = fs::remove_file(&params.summary_out);
+
+    let argv = build_train_args(params);
+    let mut cmd = StdCommand::new(&params.python);
+    cmd.args(&argv);
+    // Inherit stdout/stderr so operators can watch ultralytics' progress
+    // bars in real time. Structured data goes to --summary-out, not stdout.
+    let status = cmd.status().with_context(|| {
+        format!(
+            "spawn {} {}",
+            params.python.display(),
+            params.script.display()
+        )
+    })?;
+    if !status.success() {
+        anyhow::bail!(
+            "retrain_train.py exited with status {} ({} {})",
+            status
+                .code()
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| "<signal>".into()),
+            params.python.display(),
+            params.script.display(),
+        );
+    }
+    if !params.summary_out.is_file() {
+        anyhow::bail!(
+            "retrain_train.py exited 0 but did not write summary file: {}",
+            params.summary_out.display()
+        );
+    }
+    let body = fs::read_to_string(&params.summary_out)
+        .with_context(|| format!("read summary {}", params.summary_out.display()))?;
+    let report: RetrainTrainReport = serde_json::from_str(&body)
+        .with_context(|| format!("parse summary JSON {}", params.summary_out.display()))?;
+    if report.status != "ok" {
+        anyhow::bail!(
+            "retrain_train.py reported status={:?} (expected \"ok\")",
+            report.status
+        );
+    }
+    if report.output_shape.len() != 3
+        || report.output_shape[0] != 1
+        || report.output_shape[2] != crate::inference::yolov8::NUM_ANCHORS as i64
+    {
+        anyhow::bail!(
+            "retrain_train.py produced unexpected output_shape {:?} (expected [1, 4+nc, {}])",
+            report.output_shape,
+            crate::inference::yolov8::NUM_ANCHORS,
+        );
+    }
+    Ok(report)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -490,5 +676,124 @@ mod tests {
     fn parse_bbox_rejects_non_object() {
         let v = json!([1, 2, 3, 4]);
         assert!(parse_bbox(&v).is_none());
+    }
+
+    fn sample_train_params() -> TrainParams {
+        TrainParams {
+            cycle_dir: PathBuf::from("/tmp/cycle-1"),
+            base_weights: "yolov8n.pt".into(),
+            epochs: 50,
+            imgsz: 640,
+            export_imgsz: 640,
+            freeze: 10,
+            batch: 16,
+            workers: 4,
+            device: "cpu".into(),
+            runs_dir: PathBuf::from("/tmp/cycle-1/runs"),
+            run_name: "cycle-1".into(),
+            candidate_out: PathBuf::from("/tmp/cycle-1.candidate.onnx"),
+            opset: 12,
+            summary_out: PathBuf::from("/tmp/cycle-1.summary.json"),
+            python: PathBuf::from("/usr/bin/python3"),
+            script: PathBuf::from("/opt/f1/tools/retrain_train.py"),
+        }
+    }
+
+    #[test]
+    fn build_train_args_includes_all_flags() {
+        let p = sample_train_params();
+        let args = build_train_args(&p);
+        let as_strs: Vec<String> = args
+            .iter()
+            .map(|s| s.to_string_lossy().into_owned())
+            .collect();
+        // First positional must be the script path itself.
+        assert_eq!(as_strs[0], "/opt/f1/tools/retrain_train.py");
+        // Required flags must all appear in pairs.
+        for flag in [
+            "--cycle-dir",
+            "--base-weights",
+            "--epochs",
+            "--imgsz",
+            "--export-imgsz",
+            "--freeze",
+            "--batch",
+            "--workers",
+            "--device",
+            "--runs-dir",
+            "--run-name",
+            "--candidate-out",
+            "--opset",
+            "--summary-out",
+        ] {
+            assert!(
+                as_strs.iter().any(|s| s == flag),
+                "missing flag {flag} in {:?}",
+                as_strs
+            );
+        }
+        // Critical pair: export-imgsz value follows its flag and equals 640.
+        let idx = as_strs.iter().position(|s| s == "--export-imgsz").unwrap();
+        assert_eq!(as_strs[idx + 1], "640");
+    }
+
+    #[test]
+    fn build_train_args_overrides_train_imgsz_independent_of_export() {
+        let mut p = sample_train_params();
+        p.imgsz = 320;
+        p.export_imgsz = 640;
+        let args = build_train_args(&p);
+        let as_strs: Vec<String> = args
+            .iter()
+            .map(|s| s.to_string_lossy().into_owned())
+            .collect();
+        let i = as_strs.iter().position(|s| s == "--imgsz").unwrap();
+        assert_eq!(as_strs[i + 1], "320");
+        let j = as_strs.iter().position(|s| s == "--export-imgsz").unwrap();
+        assert_eq!(as_strs[j + 1], "640");
+    }
+
+    #[test]
+    fn retrain_train_report_parses_python_output() {
+        // Sample of the JSON `tools/retrain_train.py` writes to --summary-out.
+        let body = r#"{
+            "status": "ok",
+            "cycle_dir": "/tmp/cycle-1",
+            "base_weights": "yolov8n.pt",
+            "epochs": 1,
+            "imgsz": 320,
+            "export_imgsz": 640,
+            "freeze": 10,
+            "batch": 2,
+            "device": "cpu",
+            "run_dir": "/tmp/cycle-1/runs/smoke",
+            "best_pt": "/tmp/cycle-1/runs/smoke/weights/best.pt",
+            "onnx_export": "/tmp/cycle-1/runs/smoke/weights/best.onnx",
+            "candidate_out": "/tmp/cycle-1.candidate.onnx",
+            "candidate_size_bytes": 12238381,
+            "output_shape": [1, 5, 8400],
+            "train_seconds": 3.4,
+            "export_seconds": 1.2
+        }"#;
+        let r: RetrainTrainReport = serde_json::from_str(body).expect("parses");
+        assert_eq!(r.status, "ok");
+        assert_eq!(r.output_shape, vec![1, 5, 8400]);
+        assert_eq!(r.candidate_size_bytes, 12_238_381);
+    }
+
+    #[test]
+    fn retrain_train_report_tolerates_extra_fields() {
+        // Future python additions must not break the Rust deserialiser.
+        let body = r#"{
+            "status": "ok",
+            "output_shape": [1, 5, 8400],
+            "future_field_we_dont_know_about": "hello"
+        }"#;
+        let r: RetrainTrainReport = serde_json::from_str(body).expect("parses");
+        assert_eq!(r.status, "ok");
+        assert_eq!(r.output_shape, vec![1, 5, 8400]);
+        // Unknown/missing fields default to zero/empty.
+        assert_eq!(r.candidate_size_bytes, 0);
+        assert_eq!(r.train_seconds, 0.0);
     }
 }

@@ -131,4 +131,73 @@ pub enum RetrainDetectorAction {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Run YOLOv8 fine-tune + ONNX export against an existing cycle.
+    ///
+    /// Shells out to `tools/retrain_train.py` (an ultralytics + onnxruntime
+    /// wrapper) and writes a `candidate.onnx` whose shape `[1, 4+nc, 8400]`
+    /// is validated to match the server-side shape-tolerant decoder added
+    /// in milestone #7b-prep. Promotion of the candidate into the live
+    /// model registry lands in milestone #7c.
+    Train {
+        /// Cycle directory previously produced by `prepare`. Must
+        /// contain `data.yaml` + `images/` + `labels/`.
+        #[arg(long)]
+        cycle_dir: String,
+        /// Base weights to fine-tune from. Defaults to `yolov8n.pt`,
+        /// which `ultralytics` auto-downloads on first use.
+        #[arg(long, default_value = "yolov8n.pt")]
+        base_weights: String,
+        /// Number of training epochs.
+        #[arg(long, default_value_t = 50)]
+        epochs: u32,
+        /// Training image size. Lower values train faster but the
+        /// exported anchor count must match the server (which assumes
+        /// 640×640 → 8400 anchors); see `--export-imgsz`.
+        #[arg(long, default_value_t = 640)]
+        imgsz: u32,
+        /// ONNX export image size. Must remain 640 unless the server
+        /// `NUM_ANCHORS` constant is updated in lockstep.
+        #[arg(long, default_value_t = 640)]
+        export_imgsz: u32,
+        /// Number of layers to freeze. Defaults 10 (backbone only).
+        #[arg(long, default_value_t = 10)]
+        freeze: u32,
+        /// Mini-batch size.
+        #[arg(long, default_value_t = 16)]
+        batch: u32,
+        /// Dataloader workers.
+        #[arg(long, default_value_t = 4)]
+        workers: u32,
+        /// Compute device passed to ultralytics (`cpu`, `0`, `0,1`, ...).
+        #[arg(long, default_value = "cpu")]
+        device: String,
+        /// Override the training-cycle root (used to derive default
+        /// `--runs-dir` and `--candidate-out`).
+        #[arg(long)]
+        training_dir: Option<String>,
+        /// Where ultralytics writes its `runs/<run_name>/` artefacts.
+        /// Defaults to `<training_dir>/runs`.
+        #[arg(long)]
+        runs_dir: Option<String>,
+        /// ultralytics run-name. Defaults to the cycle directory's
+        /// basename.
+        #[arg(long)]
+        run_name: Option<String>,
+        /// Final candidate ONNX path. Defaults to
+        /// `<training_dir>/<run_name>.candidate.onnx`.
+        #[arg(long)]
+        candidate_out: Option<String>,
+        /// ONNX opset version.
+        #[arg(long, default_value_t = 12)]
+        opset: u32,
+        /// Override the python interpreter (default: `$F1P_PYTHON`
+        /// or `python3`).
+        #[arg(long)]
+        python: Option<String>,
+        /// Override the path to `retrain_train.py` (default:
+        /// `$F1P_RETRAIN_SCRIPT` or `tools/retrain_train.py` next to
+        /// the binary).
+        #[arg(long)]
+        script: Option<String>,
+    },
 }
