@@ -16,5 +16,6 @@ pub mod error;
 pub mod finetune;
 pub mod inference;
 pub mod logging;
+pub mod retrain;
 pub mod static_assets;
 pub mod worker;

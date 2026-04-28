@@ -1,6 +1,7 @@
 use anyhow::{bail, Result};
 use chrono::{DateTime, Duration, NaiveDate, TimeZone, Utc};
 use clap::Parser;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -8,9 +9,9 @@ use f1_photo_server::{
     api,
     auth::{jwt::DEFAULT_TTL_SECONDS, password, JwtCodec},
     bundled_pg::BundledPg,
-    cli::{Cli, Command, FinetuneAction, ModelsAction},
+    cli::{Cli, Command, FinetuneAction, ModelsAction, RetrainDetectorAction},
     config::Config,
-    db, finetune, inference, logging, static_assets, worker,
+    db, finetune, inference, logging, retrain, static_assets, worker,
 };
 
 #[tokio::main]
@@ -52,6 +53,28 @@ async fn main() -> Result<()> {
                 project,
                 dry_run,
             } => finetune_apply(cfg, since.as_deref(), project.as_deref(), dry_run).await,
+        },
+        Command::RetrainDetector { action } => match action {
+            RetrainDetectorAction::Stats { since, min_score } => {
+                retrain_stats(cfg, since.as_deref(), min_score).await
+            }
+            RetrainDetectorAction::Prepare {
+                since,
+                min_score,
+                min_corrections,
+                training_dir,
+                dry_run,
+            } => {
+                retrain_prepare(
+                    cfg,
+                    since.as_deref(),
+                    min_score,
+                    min_corrections,
+                    training_dir.as_deref(),
+                    dry_run,
+                )
+                .await
+            }
         },
     }
 }
@@ -295,5 +318,88 @@ async fn finetune_apply(
     println!("inserted               : {}", r.inserted);
     println!("skipped_already_present: {}", r.skipped_already_present);
     println!("skipped_no_embedding   : {}", r.skipped_no_embedding);
+    Ok(())
+}
+
+/// Resolve the on-disk training-cycle root.
+///
+/// Precedence: `--training-dir` flag > `F1P_TRAINING_DIR` env > `<data_dir>/training`.
+fn resolve_training_dir(cfg: &Config, override_dir: Option<&str>) -> PathBuf {
+    if let Some(s) = override_dir {
+        return PathBuf::from(s);
+    }
+    if let Ok(s) = std::env::var("F1P_TRAINING_DIR") {
+        if !s.is_empty() {
+            return PathBuf::from(s);
+        }
+    }
+    Path::new(&cfg.data_dir).join("training")
+}
+
+async fn retrain_stats(cfg: Config, since: Option<&str>, min_score: f64) -> Result<()> {
+    let pool = db::connect(&cfg).await?;
+    db::migrate(&pool).await?;
+    let since = parse_since(since)?;
+    let s = retrain::stats(&pool, since, min_score).await?;
+    println!("since               : {}", s.since);
+    println!("min_score           : {}", s.min_score);
+    println!("total               : {}", s.total);
+    println!();
+    println!("{:<14}  {:>9}", "owner_type", "count");
+    println!("{}", "-".repeat(28));
+    for o in &s.by_owner_type {
+        println!("{:<14}  {:>9}", o.owner_type, o.count);
+    }
+    Ok(())
+}
+
+async fn retrain_prepare(
+    cfg: Config,
+    since: Option<&str>,
+    min_score: f64,
+    min_corrections: i64,
+    training_dir_override: Option<&str>,
+    dry_run: bool,
+) -> Result<()> {
+    let pool = db::connect(&cfg).await?;
+    db::migrate(&pool).await?;
+    let since = parse_since(since)?;
+    let training_dir = resolve_training_dir(&cfg, training_dir_override);
+    let data_dir = PathBuf::from(&cfg.data_dir);
+    let r = retrain::prepare(
+        &pool,
+        &data_dir,
+        &training_dir,
+        since,
+        min_score,
+        min_corrections,
+        dry_run,
+    )
+    .await?;
+    println!("since                 : {}", r.since);
+    println!("min_score             : {}", r.min_score);
+    println!("min_corrections       : {}", r.min_corrections);
+    println!("dry_run               : {}", r.dry_run);
+    println!("training_dir          : {}", training_dir.display());
+    println!("eligible              : {}", r.eligible);
+    println!("written               : {}", r.written);
+    println!("below_threshold       : {}", r.below_threshold);
+    println!("skipped_no_dimensions : {}", r.skipped_no_dimensions);
+    println!("skipped_degenerate_bbox: {}", r.skipped_degenerate_bbox);
+    println!("skipped_missing_photo : {}", r.skipped_missing_photo);
+    println!(
+        "cycle_dir             : {}",
+        r.cycle_dir
+            .as_ref()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| "<none>".to_string())
+    );
+    if r.below_threshold {
+        println!();
+        println!(
+            "NOTE: eligible ({}) below min_corrections ({}); no cycle written.",
+            r.eligible, r.min_corrections
+        );
+    }
     Ok(())
 }
