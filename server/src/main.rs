@@ -114,6 +114,25 @@ async fn main() -> Result<()> {
                 )
                 .await
             }
+            RetrainDetectorAction::Promote {
+                candidate,
+                cycle_dir,
+                models_dir,
+                kind,
+                notes,
+                dry_run,
+            } => {
+                retrain_promote(
+                    cfg,
+                    &candidate,
+                    cycle_dir.as_deref(),
+                    models_dir.as_deref(),
+                    &kind,
+                    notes.as_deref(),
+                    dry_run,
+                )
+                .await
+            }
         },
     }
 }
@@ -574,5 +593,96 @@ async fn retrain_train(
     println!("best_pt              : {}", report.best_pt);
     println!("train_seconds        : {:.1}", report.train_seconds);
     println!("export_seconds       : {:.1}", report.export_seconds);
+    Ok(())
+}
+
+/// `f1photo retrain-detector promote` — atomically promote a candidate
+/// ONNX into the live model registry and record the audit row.
+///
+/// `#7c-skel` ships unconditional promotion (the shadow-eval gate lands
+/// in `#7c-eval`). `--dry-run` plans the move and prints sha256 / size /
+/// cycle / archive path without touching the filesystem or the database.
+async fn retrain_promote(
+    cfg: Config,
+    candidate: &str,
+    cycle_dir: Option<&str>,
+    models_dir_override: Option<&str>,
+    kind: &str,
+    notes: Option<&str>,
+    dry_run: bool,
+) -> Result<()> {
+    let pool = db::connect(&cfg).await?;
+    db::migrate(&pool).await?;
+
+    let models_dir = match models_dir_override {
+        Some(s) => PathBuf::from(s),
+        None => PathBuf::from(&cfg.models_dir),
+    };
+    let candidate_path = PathBuf::from(candidate);
+    let cycle_dir_path = cycle_dir.map(PathBuf::from);
+
+    let prior = retrain::count_promotions(&pool, kind).await?;
+
+    let params = retrain::PromoteParams {
+        candidate: candidate_path,
+        models_dir: models_dir.clone(),
+        kind: kind.to_string(),
+        cycle_dir: cycle_dir_path,
+        notes: notes.map(|s| s.to_string()),
+        dry_run,
+    };
+
+    // sha256-hashing the candidate is blocking I/O for large ONNX files.
+    let plan = {
+        let params = params.clone();
+        tokio::task::spawn_blocking(move || retrain::plan_promote(&params, prior)).await??
+    };
+
+    println!("kind                  : {}", plan.kind);
+    println!("cycle (new live)      : {}", plan.cycle);
+    println!("candidate             : {}", plan.candidate.display());
+    println!("candidate_sha256      : {}", plan.candidate_sha256);
+    println!("candidate_size        : {}", plan.candidate_size);
+    println!("target                : {}", plan.target.display());
+    println!("previous_target_existed: {}", plan.previous_target_existed);
+    match plan.history_archive.as_ref() {
+        Some(h) => println!("history_archive       : {}", h.display()),
+        None => println!("history_archive       : <none — first promotion>"),
+    }
+    match plan.corrections_consumed {
+        Some(n) => println!("corrections_consumed  : {}", n),
+        None => println!("corrections_consumed  : <unknown — no cycle metadata>"),
+    }
+    if let Some(n) = plan.notes.as_deref() {
+        println!("notes                 : {}", n);
+    }
+    println!("dry_run               : {}", plan.dry_run);
+
+    if plan.dry_run {
+        println!();
+        println!("dry-run: not renaming files, not inserting model_versions row.");
+        return Ok(());
+    }
+
+    // Move files first; only insert the audit row if the rename succeeds.
+    let plan_for_exec = plan.clone();
+    tokio::task::spawn_blocking(move || retrain::execute_filesystem_promote(&plan_for_exec))
+        .await??;
+
+    let id = retrain::record_promotion(
+        &pool,
+        &plan.kind,
+        &plan.candidate_sha256,
+        plan.candidate_size,
+        plan.corrections_consumed,
+        None, // eval_deltas: filled in by #7c-eval
+        None, // promoted_by: CLI invocation has no logged-in user yet
+        plan.notes.as_deref(),
+    )
+    .await?;
+
+    println!();
+    println!("promoted              : ✓");
+    println!("model_versions row id : {}", id);
     Ok(())
 }

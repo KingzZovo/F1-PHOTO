@@ -200,4 +200,40 @@ pub enum RetrainDetectorAction {
         #[arg(long)]
         script: Option<String>,
     },
+    /// Promote a candidate ONNX into the live model registry.
+    ///
+    /// Atomically renames `--candidate` over `<models_dir>/object_detect.onnx`
+    /// (archiving the previous version under `<models_dir>/history/`) and
+    /// records an audit row in `model_versions` (cycle, sha256, file_size,
+    /// corrections_consumed, eval_deltas, promoted_at, promoted_by, notes).
+    ///
+    /// `#7c-skel` ships unconditional promotion (no shadow-eval gate); the
+    /// gate (#2-tool fixture + #2c-tune face fixture deltas, fail-closed on
+    /// regressions) lands in `#7c-eval`. Use `--dry-run` to preview the
+    /// plan without touching the filesystem or the database.
+    Promote {
+        /// Candidate ONNX path. Must be an existing non-empty file,
+        /// typically the `--candidate-out` of a previous `train` run.
+        #[arg(long)]
+        candidate: String,
+        /// Optional cycle directory; if it contains `metadata.json`,
+        /// `corrections_consumed` is populated from its `count` field.
+        #[arg(long)]
+        cycle_dir: Option<String>,
+        /// Override the models directory. Defaults to the config
+        /// `models_dir` (= `$F1P_MODELS_DIR` or `<cwd>/models`).
+        #[arg(long)]
+        models_dir: Option<String>,
+        /// Override the kind. Defaults to `object_detect`. Reserved for
+        /// future face / generic-embed retrain pipelines.
+        #[arg(long, default_value = "object_detect")]
+        kind: String,
+        /// Optional free-form note recorded in `model_versions.notes`.
+        #[arg(long)]
+        notes: Option<String>,
+        /// Plan the promote and report sha256 / file size / cycle number
+        /// without renaming files or inserting a `model_versions` row.
+        #[arg(long)]
+        dry_run: bool,
+    },
 }

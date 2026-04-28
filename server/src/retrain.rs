@@ -29,6 +29,7 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Row};
 use std::ffi::OsString;
 use std::fs;
@@ -590,6 +591,237 @@ pub fn train(params: &TrainParams) -> Result<RetrainTrainReport> {
     Ok(report)
 }
 
+// ---------------------------------------------------------------------------
+// Milestone #7c-skel: candidate -> live promotion + model_versions audit row.
+// ---------------------------------------------------------------------------
+
+/// Hash + size snapshot of an ONNX file ready for promotion.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CandidateFingerprint {
+    pub path: PathBuf,
+    pub sha256: String,
+    pub file_size: i64,
+}
+
+/// Hash a file fully into hex sha256 + size. Errors if the file is empty
+/// (a 0-byte ONNX is never a valid promotion candidate).
+pub fn fingerprint_file(path: &Path) -> Result<CandidateFingerprint> {
+    let bytes = fs::read(path).with_context(|| format!("read candidate {}", path.display()))?;
+    if bytes.is_empty() {
+        anyhow::bail!("candidate file is empty: {}", path.display());
+    }
+    let mut hasher = Sha256::new();
+    hasher.update(&bytes);
+    let sha256 = format!("{:x}", hasher.finalize());
+    let file_size = bytes.len() as i64;
+    Ok(CandidateFingerprint {
+        path: path.to_path_buf(),
+        sha256,
+        file_size,
+    })
+}
+
+/// Filename used to archive the *previous* live model when a new cycle K
+/// is being promoted. Example: `object_detect.v3.onnx` for the model that
+/// was live as cycle 3 just before cycle 4 was promoted.
+pub fn history_filename(kind: &str, prev_cycle: i64) -> String {
+    format!("{}.v{}.onnx", kind, prev_cycle.max(0))
+}
+
+/// Inputs to [`plan_promote`] / [`execute_filesystem_promote`].
+#[derive(Debug, Clone)]
+pub struct PromoteParams {
+    pub candidate: PathBuf,
+    pub models_dir: PathBuf,
+    pub kind: String,
+    pub cycle_dir: Option<PathBuf>,
+    pub notes: Option<String>,
+    pub dry_run: bool,
+}
+
+/// Pre-flight plan describing what a promotion is about to do, computed
+/// without mutating the filesystem (apart from reading the candidate to
+/// hash it). `dry_run=true` runs stop here; otherwise this plan is fed
+/// into [`execute_filesystem_promote`] + the audit-row insert.
+#[derive(Debug, Clone, Serialize)]
+pub struct PromotePlan {
+    pub kind: String,
+    /// 1-based cycle number of the *new* live model. Computed as
+    /// `prior_promotions + 1` so cycle K is the K-th promotion of this
+    /// kind. The previous live model (if any) is archived as cycle K-1.
+    pub cycle: i64,
+    pub candidate: PathBuf,
+    pub candidate_sha256: String,
+    pub candidate_size: i64,
+    /// Final live path: `<models_dir>/<kind>.onnx`.
+    pub target: PathBuf,
+    /// `<models_dir>/history/<kind>.v<cycle-1>.onnx`. None when there is
+    /// no current live model to archive (first-ever promotion).
+    pub history_archive: Option<PathBuf>,
+    /// True when `target` already exists pre-promotion.
+    pub previous_target_existed: bool,
+    /// Pulled from `<cycle_dir>/metadata.json` when available.
+    pub corrections_consumed: Option<i64>,
+    pub notes: Option<String>,
+    pub dry_run: bool,
+}
+
+/// Read `<cycle_dir>/metadata.json` (written by `prepare`) and return its
+/// `count` field as `corrections_consumed`. Returns `Ok(None)` when the
+/// file is absent (operator may promote a hand-crafted candidate).
+pub fn read_corrections_consumed(cycle_dir: &Path) -> Result<Option<i64>> {
+    let p = cycle_dir.join("metadata.json");
+    if !p.is_file() {
+        return Ok(None);
+    }
+    let body =
+        fs::read_to_string(&p).with_context(|| format!("read cycle metadata {}", p.display()))?;
+    let meta: CycleMetadata = serde_json::from_str(&body)
+        .with_context(|| format!("parse cycle metadata {}", p.display()))?;
+    Ok(Some(meta.count as i64))
+}
+
+/// Compute the promotion plan. Caller passes the count of pre-existing
+/// `model_versions` rows of this kind so that K = prior + 1 is decided
+/// without coupling this pure function to a DB pool. The candidate file
+/// is hashed here.
+pub fn plan_promote(params: &PromoteParams, prior_promotions: i64) -> Result<PromotePlan> {
+    if params.kind.is_empty() {
+        anyhow::bail!("kind must be non-empty");
+    }
+    if !params.candidate.is_file() {
+        anyhow::bail!(
+            "candidate is not a regular file: {}",
+            params.candidate.display()
+        );
+    }
+    let fp = fingerprint_file(&params.candidate)?;
+    let target = params.models_dir.join(format!("{}.onnx", params.kind));
+    let previous_target_existed = target.is_file();
+    let cycle = prior_promotions.saturating_add(1);
+    let history_archive = if previous_target_existed {
+        Some(
+            params
+                .models_dir
+                .join("history")
+                .join(history_filename(&params.kind, prior_promotions)),
+        )
+    } else {
+        None
+    };
+    let corrections_consumed = match params.cycle_dir.as_deref() {
+        Some(d) => read_corrections_consumed(d)?,
+        None => None,
+    };
+    Ok(PromotePlan {
+        kind: params.kind.clone(),
+        cycle,
+        candidate: fp.path,
+        candidate_sha256: fp.sha256,
+        candidate_size: fp.file_size,
+        target,
+        history_archive,
+        previous_target_existed,
+        corrections_consumed,
+        notes: params.notes.clone(),
+        dry_run: params.dry_run,
+    })
+}
+
+/// Apply the plan: archive any current live model under
+/// `<models_dir>/history/`, then move the candidate into place.
+/// Caller is responsible for ensuring `plan.dry_run == false` first.
+pub fn execute_filesystem_promote(plan: &PromotePlan) -> Result<()> {
+    if plan.dry_run {
+        anyhow::bail!("refusing to execute filesystem promote on dry-run plan");
+    }
+    if let Some(history_path) = plan.history_archive.as_ref() {
+        let history_dir = history_path
+            .parent()
+            .ok_or_else(|| anyhow::anyhow!("history archive has no parent"))?;
+        fs::create_dir_all(history_dir)
+            .with_context(|| format!("mkdir -p {}", history_dir.display()))?;
+        rename_or_copy(&plan.target, history_path).with_context(|| {
+            format!(
+                "archive {} -> {}",
+                plan.target.display(),
+                history_path.display()
+            )
+        })?;
+    }
+    if let Some(target_dir) = plan.target.parent() {
+        fs::create_dir_all(target_dir)
+            .with_context(|| format!("mkdir -p {}", target_dir.display()))?;
+    }
+    rename_or_copy(&plan.candidate, &plan.target).with_context(|| {
+        format!(
+            "promote {} -> {}",
+            plan.candidate.display(),
+            plan.target.display()
+        )
+    })?;
+    Ok(())
+}
+
+/// `fs::rename` first (atomic on the same filesystem), with a copy + remove
+/// fallback when the source and destination are on different filesystems
+/// (e.g. training_dir mounted separately from models_dir). The fallback is
+/// not atomic but the candidate has already been hashed and the audit row
+/// records the sha256, so a partial failure is detectable post-hoc.
+fn rename_or_copy(src: &Path, dst: &Path) -> Result<()> {
+    if fs::rename(src, dst).is_ok() {
+        return Ok(());
+    }
+    fs::copy(src, dst).with_context(|| format!("copy {} -> {}", src.display(), dst.display()))?;
+    fs::remove_file(src).with_context(|| format!("remove source {}", src.display()))?;
+    Ok(())
+}
+
+/// Count of prior promotions of this kind. The new cycle number is
+/// `count_promotions(...) + 1`.
+pub async fn count_promotions(pool: &PgPool, kind: &str) -> Result<i64> {
+    let row = sqlx::query("SELECT COUNT(*)::bigint AS n FROM model_versions WHERE kind = $1")
+        .bind(kind)
+        .fetch_one(pool)
+        .await
+        .with_context(|| format!("count model_versions kind={}", kind))?;
+    let n: i64 = row.try_get("n")?;
+    Ok(n)
+}
+
+/// Insert the audit row for a freshly-promoted model. `eval_deltas` is
+/// `None` for #7c-skel (the shadow-eval gate lands in #7c-eval); a
+/// `notes`-only row is fine.
+#[allow(clippy::too_many_arguments)]
+pub async fn record_promotion(
+    pool: &PgPool,
+    kind: &str,
+    sha256: &str,
+    file_size: i64,
+    corrections_consumed: Option<i64>,
+    eval_deltas: Option<serde_json::Value>,
+    promoted_by: Option<Uuid>,
+    notes: Option<&str>,
+) -> Result<i64> {
+    let row = sqlx::query(
+        "INSERT INTO model_versions \
+         (kind, sha256, file_size, corrections_consumed, eval_deltas, promoted_by, notes) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
+    )
+    .bind(kind)
+    .bind(sha256)
+    .bind(file_size)
+    .bind(corrections_consumed)
+    .bind(eval_deltas)
+    .bind(promoted_by)
+    .bind(notes)
+    .fetch_one(pool)
+    .await
+    .with_context(|| format!("insert model_versions kind={}", kind))?;
+    let id: i64 = row.try_get("id")?;
+    Ok(id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -795,5 +1027,204 @@ mod tests {
         // Unknown/missing fields default to zero/empty.
         assert_eq!(r.candidate_size_bytes, 0);
         assert_eq!(r.train_seconds, 0.0);
+    }
+
+    // -----------------------------------------------------------------
+    // #7c-skel promote helpers.
+    // -----------------------------------------------------------------
+
+    fn unique_tmpdir(tag: &str) -> PathBuf {
+        let p = std::env::temp_dir().join(format!(
+            "f1p-promote-{}-{}-{}",
+            tag,
+            std::process::id(),
+            Uuid::new_v4()
+        ));
+        fs::create_dir_all(&p).expect("mkdir tmpdir");
+        p
+    }
+
+    #[test]
+    fn fingerprint_file_basic() {
+        let dir = unique_tmpdir("fp");
+        let p = dir.join("candidate.onnx");
+        fs::write(&p, b"hello world").unwrap();
+        let fp = fingerprint_file(&p).expect("fingerprint");
+        // sha256 of "hello world" is well-known.
+        assert_eq!(
+            fp.sha256,
+            "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
+        );
+        assert_eq!(fp.file_size, 11);
+        assert_eq!(fp.path, p);
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn fingerprint_file_rejects_empty() {
+        let dir = unique_tmpdir("fp-empty");
+        let p = dir.join("empty.onnx");
+        fs::write(&p, b"").unwrap();
+        let err = fingerprint_file(&p).expect_err("empty file rejected");
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("empty"), "got: {}", msg);
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn history_filename_format() {
+        assert_eq!(
+            history_filename("object_detect", 0),
+            "object_detect.v0.onnx"
+        );
+        assert_eq!(
+            history_filename("object_detect", 3),
+            "object_detect.v3.onnx"
+        );
+        // Negative inputs (defensive) collapse to v0 rather than panicking.
+        assert_eq!(
+            history_filename("object_detect", -1),
+            "object_detect.v0.onnx"
+        );
+    }
+
+    #[test]
+    fn plan_promote_first_promotion_has_no_history() {
+        let dir = unique_tmpdir("plan-first");
+        let candidate = dir.join("cand.onnx");
+        fs::write(&candidate, b"some-onnx-bytes").unwrap();
+        let models_dir = dir.join("models");
+        fs::create_dir_all(&models_dir).unwrap();
+        let params = PromoteParams {
+            candidate: candidate.clone(),
+            models_dir: models_dir.clone(),
+            kind: "object_detect".into(),
+            cycle_dir: None,
+            notes: None,
+            dry_run: true,
+        };
+        let plan = plan_promote(&params, 0).expect("plan");
+        assert_eq!(plan.cycle, 1);
+        assert!(!plan.previous_target_existed);
+        assert!(plan.history_archive.is_none());
+        assert_eq!(plan.target, models_dir.join("object_detect.onnx"));
+        assert_eq!(plan.candidate, candidate);
+        assert_eq!(plan.candidate_size, 15);
+        assert!(plan.dry_run);
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn plan_promote_archives_existing_target_under_history() {
+        let dir = unique_tmpdir("plan-arch");
+        let candidate = dir.join("cand.onnx");
+        fs::write(&candidate, b"new-onnx").unwrap();
+        let models_dir = dir.join("models");
+        fs::create_dir_all(&models_dir).unwrap();
+        // Pretend cycles 1, 2, 3 have been promoted; cycle 3 is currently live.
+        fs::write(models_dir.join("object_detect.onnx"), b"old-onnx").unwrap();
+        let params = PromoteParams {
+            candidate,
+            models_dir: models_dir.clone(),
+            kind: "object_detect".into(),
+            cycle_dir: None,
+            notes: Some("smoke".into()),
+            dry_run: false,
+        };
+        let plan = plan_promote(&params, 3).expect("plan");
+        assert_eq!(plan.cycle, 4); // K = prior + 1
+        assert!(plan.previous_target_existed);
+        assert_eq!(
+            plan.history_archive,
+            Some(models_dir.join("history").join("object_detect.v3.onnx"))
+        );
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn plan_promote_reads_corrections_from_cycle_metadata() {
+        let dir = unique_tmpdir("plan-meta");
+        let candidate = dir.join("cand.onnx");
+        fs::write(&candidate, b"x").unwrap();
+        let models_dir = dir.join("models");
+        fs::create_dir_all(&models_dir).unwrap();
+        let cycle_dir = dir.join("cycle-1");
+        fs::create_dir_all(&cycle_dir).unwrap();
+        let meta = json!({
+            "cycle_id": "cycle-1",
+            "prepared_at": "2026-04-28T00:00:00Z",
+            "since": "2026-04-01T00:00:00Z",
+            "min_score": 0.5,
+            "min_corrections": 50,
+            "class_names": ["tool"],
+            "count": 73,
+            "items": []
+        });
+        fs::write(
+            cycle_dir.join("metadata.json"),
+            serde_json::to_string_pretty(&meta).unwrap(),
+        )
+        .unwrap();
+        let params = PromoteParams {
+            candidate,
+            models_dir,
+            kind: "object_detect".into(),
+            cycle_dir: Some(cycle_dir),
+            notes: None,
+            dry_run: true,
+        };
+        let plan = plan_promote(&params, 0).expect("plan");
+        assert_eq!(plan.corrections_consumed, Some(73));
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn execute_filesystem_promote_archives_then_renames() {
+        let dir = unique_tmpdir("exec");
+        let candidate = dir.join("cand.onnx");
+        fs::write(&candidate, b"NEW").unwrap();
+        let models_dir = dir.join("models");
+        fs::create_dir_all(&models_dir).unwrap();
+        fs::write(models_dir.join("object_detect.onnx"), b"OLD").unwrap();
+        let params = PromoteParams {
+            candidate: candidate.clone(),
+            models_dir: models_dir.clone(),
+            kind: "object_detect".into(),
+            cycle_dir: None,
+            notes: None,
+            dry_run: false,
+        };
+        let plan = plan_promote(&params, 2).expect("plan");
+        execute_filesystem_promote(&plan).expect("execute");
+        assert!(!candidate.exists(), "candidate consumed");
+        assert_eq!(
+            fs::read(models_dir.join("object_detect.onnx")).unwrap(),
+            b"NEW"
+        );
+        let archive = models_dir.join("history").join("object_detect.v2.onnx");
+        assert_eq!(fs::read(&archive).unwrap(), b"OLD");
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn execute_filesystem_promote_refuses_dry_run_plan() {
+        let dir = unique_tmpdir("dry");
+        let candidate = dir.join("cand.onnx");
+        fs::write(&candidate, b"x").unwrap();
+        let models_dir = dir.join("models");
+        fs::create_dir_all(&models_dir).unwrap();
+        let params = PromoteParams {
+            candidate,
+            models_dir,
+            kind: "object_detect".into(),
+            cycle_dir: None,
+            notes: None,
+            dry_run: true,
+        };
+        let plan = plan_promote(&params, 0).expect("plan");
+        let err = execute_filesystem_promote(&plan).expect_err("refuses");
+        let msg = format!("{:#}", err);
+        assert!(msg.contains("dry-run"), "got: {}", msg);
+        fs::remove_dir_all(&dir).ok();
     }
 }
