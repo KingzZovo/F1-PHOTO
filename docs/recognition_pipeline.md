@@ -32,6 +32,23 @@
 - score ≥ 0.4、面积 ≥ 96×96 的主体框。
 - 同图多主体按面积降序取前 N。
 
+### 3.3 上传分支与检测器调用差异（owner_type=person vs owner_type=wo_raw）
+
+上传时的 `owner_type` 决定后端跑哪些检测器，并不仅仅是元数据标签：
+
+- `owner_type=person`（人员档案 / bootstrap 入库）：**只跑 §3.1 SCRFD 人脸检测器**。SCRFD 命中后直接走 §4.1 ArcFace，写入 `detections(target_type=face)` 与 `identity_embeddings`，作为后续 wo_raw 召回的检索向量。**不跑 §3.2 YOLOv8 工具 / 设备检测器**——这一支节省 CPU、避免给 person 档案产生与人物身份无关的次级 detection。
+- `owner_type=wo_raw`（生产工单照片）：**§3.1 SCRFD + §3.2 YOLOv8 都跑**，是完整的识别管线，所有 `target_type` 都会落 `detections`。
+- 同一张 byte-identical 照片以两种 owner_type 入两个 project，face detection 的 SCRFD score 完全字节相等（max-abs 差 = 0）；这是 ORT/CPU 上的确定性，不是采样巧合。
+
+实测证据见 `docs/baselines/2c-asia.json`（milestone #2c-asia，commit ede6a1e）：同 119 张真实身份照，`owner_type=person` 入库后 `tool_count = 0|119`、`device_count = 0|119`；同样 119 张以 `owner_type=wo_raw` 进入第二个 project 后 YOLOv8 触发 214 个 `target_type=tool` 检测（per-photo 1.798）。两个 project 的 face score 分位与单值都一致。
+
+实操含义：
+
+- 评估 / baseline 流程若想覆盖工具 / 设备检测器的真值，必须经由 `wo_raw` 路径，不能只用 person 上传。
+- 给 person 档案手工补一张照片不会触发任何 tool / device detection，也不会污染 `identity_embeddings` 之外的表。
+- #5-bootstrap 工具误检校正样本天然只能从 wo_raw 路径采集——bootstrap 路径上根本没有 tool/device detection 可校正。
+
+
 ## 4. Embedding
 
 ### 4.1 人脸
