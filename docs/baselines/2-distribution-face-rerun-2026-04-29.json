@@ -1,0 +1,109 @@
+{
+  "comparison": {
+    "detection_engine_subset": {
+      "device_count_histogram": {
+        "0": 42,
+        "1": 0,
+        "2+": 0
+      },
+      "equal": true,
+      "face_count_histogram": {
+        "0": 14,
+        "1": 23,
+        "2": 4,
+        "3+": 1
+      },
+      "face_score_median": 0.7916443943977356,
+      "keys": [
+        "face_count",
+        "tool_count",
+        "device_count",
+        "face_score_quantiles",
+        "tool_score_quantiles",
+        "device_score_quantiles"
+      ],
+      "sha256_short": "576b759fa72d8684",
+      "tool_count_histogram": {
+        "0": 0,
+        "1": 30,
+        "2+": 12
+      },
+      "tool_score_median": 0.6681045889854431
+    },
+    "distributions_equal_detection_subset": true,
+    "distributions_equal_full": false,
+    "matching_half_diff": {
+      "affected_photo_path_normalized": "photos/<uuid>/28/28b727d75822031c4bb7dd0f032998a5820c09e42c08f781bcfbf3f3e5f1e8cd.jpg",
+      "change": {
+        "recognition_items_by_status": {
+          "base": {
+            "unmatched": 2
+          },
+          "rerun": {
+            "learning": 1,
+            "unmatched": 1
+          }
+        },
+        "status": {
+          "base": "unmatched",
+          "rerun": "learning"
+        }
+      },
+      "per_photo_cell_diffs_excl_photo_id": 2,
+      "photo_status": {
+        "base": {
+          "unmatched": 42
+        },
+        "rerun": {
+          "learning": 1,
+          "unmatched": 41
+        }
+      },
+      "recognition_items_status": {
+        "base": {
+          "unmatched": 91
+        },
+        "rerun": {
+          "learning": 1,
+          "unmatched": 90
+        }
+      }
+    },
+    "meta_stripped_equal": true,
+    "meta_stripped_keys_compared": [
+      "photo_count",
+      "photos_glob",
+      "thresholds_default"
+    ]
+  },
+  "kind": "verification-rerun",
+  "milestone": "#2-face-rerun",
+  "next_steps": "For #7c-eval shadow-eval --from-reports: this rerun blob can serve as the face-side --face-current-report once a paired --face-candidate-report is produced from a candidate ONNX run. For #5-bootstrap: the matching delta on the western fixture confirms the #2-family bootstrap is actually altering wo_raw face match outcomes downstream, validating the bootstrap-then-recall flow. No threshold change implied (matching landed in the low_lower band by design, not above match_lower).",
+  "non_goals": [
+    "Not a candidate ONNX A/B (no candidate ONNX exists; #7b-train has not produced one since c09cad7 smoke).",
+    "Not a full-state-snapshot baseline replacement -- the parent baseline remains canonical.",
+    "Not a Precision/Recall labelled run (that is tools/eval_pr.py + tests/fixtures/face/baseline/MANIFEST.json, separate workflow)."
+  ],
+  "parent_baseline": {
+    "milestone": "#2 (face distribution baseline)",
+    "path": "docs/baselines/2-distribution-face-baseline.json",
+    "thresholds_default": {
+      "augment_upper": 0.95,
+      "low_lower": 0.5,
+      "match_lower": 0.62
+    }
+  },
+  "reproducer": "cd /root/F1-photo && python3 tools/eval_distribution.py --base-url http://127.0.0.1:18799 --admin-user smoke_admin --admin-pwd smoke-admin-pwd-12345 --photos-glob \"tests/fixtures/face/baseline/**/*.jpg\" --report-path /tmp/2-face-rerun-2026-04-29.json --psql-bin ./bundled-pg/bin/psql --pg-host 127.0.0.1 --pg-port 55444 --pg-user f1photo --pg-db f1photo_prod --pg-pwd smokepwd",
+  "rerun": {
+    "captured_at": "2026-04-29",
+    "log": "/tmp/eval_face_rerun.log",
+    "output_blob": "/tmp/2-face-rerun-2026-04-29.json (23491 B, NOT committed)",
+    "photo_count": 42,
+    "project_id": "cac02bd7-bfff-41cc-b23b-8230018510d3",
+    "tool": "tools/eval_distribution.py --photos-glob tests/fixtures/face/baseline/**/*.jpg (live server, bypass orchestrator)",
+    "work_order_id": "a7895bfc-1e18-424d-a58a-02bb497999d5"
+  },
+  "verdict": "PARTIAL_PASS",
+  "verdict_explanation": "Detection engine (SCRFD + COCO YOLOv8) shows zero drift across the recent #2-family work: face_count / tool_count / device_count distributions and all three score quantile blocks are byte-identical to the parent baseline (sha 576b759fa72d8684). The matching half (photo_status, recognition_items_status) shows 2 cells of diff on exactly 1 of 42 photos: status moves from \"unmatched\" to \"learning\" (i.e. a face match landed in [low_lower=0.5, match_lower=0.62) low-confidence band rather than missing entirely). This is fully explained by gallery-state delta: the parent baseline was captured when the gallery did not contain the 119 incremental face embeddings injected by the #2-family Path A bootstrap (project f06e30b8 / id-photo-2a) and Path B reverse smoke (project f54d2a48 / id-photo-2a-reverse) that landed between the original face baseline capture and this rerun. With those 119 incremental embeddings now in the gallery, exactly 1 western face fixture photo (28b727d7...) finds a partial match below match_lower threshold. No detection engine drift; matching delta is data-state, not algorithmic.",
+  "why_run": "Symmetric to the #2-tool zero-drift verification rerun (f741d6e). Confirms the face-side detection engine is stable across the 2026-04-27 -> 2026-04-29 work, and quantifies the matching-half impact of the #2-family gallery injection on a known reference fixture. Also unblocks the face-side input requirement of tools/shadow_eval.py --from-reports mode (previously gated per the 2026-04-29 handover doc) by producing a fresh face-side report."
+}
