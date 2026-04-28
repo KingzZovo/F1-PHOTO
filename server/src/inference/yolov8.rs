@@ -1,21 +1,34 @@
-//! YOLOv8n COCO output decode + NMS (Step B).
+//! YOLOv8 output decode + NMS (Step B; shape-tolerant since #7b-prep).
 //!
-//! Input: ultralytics-exported `yolov8n.onnx` with input `images (1,3,640,640)`
-//! and a single output `output0` of shape `(1, 84, 8400)`. The 84 channels are
-//! laid out as `[cx, cy, w, h, c0, c1, ..., c79]` where `c0..c79` are post-
-//! sigmoid class probabilities for the 80 COCO classes. Coordinates are in
-//! pixel space at the model's 640x640 letterbox canvas.
+//! Input: ultralytics-exported YOLOv8 ONNX with input `images (1,3,640,640)`
+//! and a single output `output0` of shape `(1, 4 + NC, 8400)`. The `4 + NC`
+//! channels are laid out as `[cx, cy, w, h, c0, c1, ..., c_{NC-1}]` where
+//! `c_i` are post-sigmoid class probabilities for the model's `NC` classes.
+//! Coordinates are in pixel space at the model's 640x640 letterbox canvas.
 //!
-//! 8400 = 80*80 + 40*40 + 20*20 anchors (P3+P4+P5 feature pyramid). The export
-//! already includes the DFL+sigmoid+box-decode head so we can read `(cx,cy,w,h)`
-//! directly without anchor math; we just need confidence filtering + NMS.
+//! 8400 = 80*80 + 40*40 + 20*20 anchors (P3+P4+P5 feature pyramid). The
+//! export already includes the DFL+sigmoid+box-decode head so we can read
+//! `(cx,cy,w,h)` directly without anchor math; we just need confidence
+//! filtering + NMS.
 //!
-//! Important caveat: yolov8n is trained on COCO, so its class labels are
-//! unrelated to F1-photo's `tools`/`devices` taxonomy. The object pipeline
-//! uses YOLOv8 only to localise *something object-like* in the frame and then
-//! runs DINOv2 over each crop to produce a re-identification embedding
-//! against the project's tool/device gallery. Real tool/device-specific
-//! detection requires fine-tuning — see `docs/TODO-deferred.md` §1.
+//! `NC` is **inferred at runtime** from the output buffer length
+//! (`out0.len() / NUM_ANCHORS - 4`) so the same decoder accepts both:
+//!
+//! 1. The shipped baseline `models/object_detect.onnx` — YOLOv8n trained on
+//!    COCO, `NC = 80` (`output0` shape `(1, 84, 8400)`).
+//! 2. Retrained candidates produced by milestone #7b that fine-tune on the
+//!    operator-corrections dataset materialised by #7a. Per the #5-skel
+//!    scope revision the candidate is a single-class detector
+//!    (`NC = 1`, class 0 = `tool`), giving `output0` shape `(1, 5, 8400)`.
+//!
+//! Important caveat (now narrowed by #7b/#7c): the COCO baseline's class
+//! labels are unrelated to F1-photo's `tools`/`devices` taxonomy. The
+//! object pipeline uses YOLOv8 only to localise *something object-like*
+//! in the frame and then runs DINOv2 over each crop to produce a
+//! re-identification embedding against the project's tool/device gallery.
+//! After the first #7c promote the detector becomes tool-specific
+//! (`NC = 1`) and `det.class_id` is always `0`; the DINOv2 re-id stage is
+//! unchanged.
 
 use anyhow::{anyhow, Result};
 
@@ -24,9 +37,15 @@ use super::preprocess::Letterbox;
 /// YOLOv8 letterbox input size used at export time (`imgsz=640`).
 pub const INPUT_SIZE: u32 = 640;
 
-/// Number of channels in the `output0` tensor (4 box + 80 COCO classes).
-pub const NUM_CHANNELS: usize = 84;
-pub const NUM_CLASSES: usize = 80;
+/// COCO baseline channel count (`4 + LEGACY_COCO_NUM_CLASSES`). Retained as a
+/// public constant so the test suite can build a synthetic `output0` of the
+/// shipped baseline shape without re-deriving it; runtime decode uses the
+/// inferred channel count, not this constant.
+pub const LEGACY_COCO_NUM_CHANNELS: usize = 84;
+/// COCO baseline class count for the shipped `models/object_detect.onnx`.
+/// Runtime decode infers the candidate model's class count from the output
+/// buffer length; this constant is only used by tests + back-compat docs.
+pub const LEGACY_COCO_NUM_CLASSES: usize = 80;
 
 /// Total number of anchors for `imgsz=640` (P3 80x80 + P4 40x40 + P5 20x20).
 pub const NUM_ANCHORS: usize = 8400;
@@ -54,18 +73,24 @@ pub struct ObjectDet {
     pub class_id: usize,
 }
 
-/// Decode YOLOv8 `output0` (shape `[1, NUM_CHANNELS, NUM_ANCHORS]`, channel-
-/// major contiguous) into a list of [`ObjectDet`]s in the original image's
-/// coordinate space.
+/// Decode YOLOv8 `output0` (shape `[1, 4 + NC, NUM_ANCHORS]`, channel-major
+/// contiguous) into a list of [`ObjectDet`]s in the original image's
+/// coordinate space. `NC` (the number of classes) is inferred at runtime
+/// from `out0.len() / NUM_ANCHORS - 4`, so the same decoder works for the
+/// COCO baseline (`NC = 80`) and for the single-class retrained candidate
+/// produced by milestones #7a/#7b (`NC = 1`).
 ///
 /// Steps:
 /// 1. For each of `NUM_ANCHORS` anchors, find the max-class score across
-///    channels `4..84`.
+///    channels `4..(4 + NC)`.
 /// 2. Drop anchors with score `< conf`.
 /// 3. Decode `(cx, cy, w, h)` from channels `0..4` to letterbox-space xyxy.
 /// 4. Unproject through the letterbox geometry to original-image xyxy.
 /// 5. Class-agnostic NMS at `iou` IoU.
 /// 6. Return at most `MAX_DETECTIONS`, sorted by score descending.
+///
+/// Errors if `out0.len()` is not a positive multiple of [`NUM_ANCHORS`] or
+/// if the inferred `NC` is `< 1` (i.e. fewer than 5 channels).
 pub fn decode_outputs(
     out0: &[f32],
     lb: Letterbox,
@@ -74,25 +99,31 @@ pub fn decode_outputs(
     conf: f32,
     iou: f32,
 ) -> Result<Vec<ObjectDet>> {
-    if out0.len() != NUM_CHANNELS * NUM_ANCHORS {
+    if out0.is_empty() || out0.len() % NUM_ANCHORS != 0 {
         return Err(anyhow!(
-            "YOLOv8 output0 expected {} floats ({}*{}); got {}",
-            NUM_CHANNELS * NUM_ANCHORS,
-            NUM_CHANNELS,
+            "YOLOv8 output0 expected a positive multiple of {} floats; got {}",
             NUM_ANCHORS,
             out0.len()
         ));
     }
+    let num_channels = out0.len() / NUM_ANCHORS;
+    if num_channels < 5 {
+        return Err(anyhow!(
+            "YOLOv8 output0 expected ≥ 5 channels (4 box + ≥ 1 class); got {}",
+            num_channels
+        ));
+    }
+    let num_classes = num_channels - 4;
 
     // Channel-major flat layout: out0[c * NUM_ANCHORS + a].
     let ch = |c: usize, a: usize| -> f32 { out0[c * NUM_ANCHORS + a] };
 
     let mut candidates: Vec<ObjectDet> = Vec::new();
     for a in 0..NUM_ANCHORS {
-        // Best class score across the 80 class channels.
+        // Best class score across the model's NC class channels.
         let mut best_score = 0.0f32;
         let mut best_class = 0usize;
-        for c in 0..NUM_CLASSES {
+        for c in 0..num_classes {
             let s = ch(4 + c, a);
             if s > best_score {
                 best_score = s;
@@ -184,8 +215,13 @@ mod tests {
         }
     }
 
-    /// Build a synthetic `output0` with a single anchor having a strong score.
+    /// Build a synthetic `output0` with a single anchor having a strong
+    /// score. `num_classes` controls the channel count (use
+    /// [`LEGACY_COCO_NUM_CLASSES`] for the COCO baseline shape, `1` for
+    /// the single-class retrained candidate produced by #7b).
+    #[allow(clippy::too_many_arguments)]
     fn synth_one_anchor(
+        num_classes: usize,
         anchor_idx: usize,
         cx: f32,
         cy: f32,
@@ -194,7 +230,9 @@ mod tests {
         class_id: usize,
         score: f32,
     ) -> Vec<f32> {
-        let mut buf = vec![0.0f32; NUM_CHANNELS * NUM_ANCHORS];
+        assert!(class_id < num_classes, "class_id out of range");
+        let num_channels = 4 + num_classes;
+        let mut buf = vec![0.0f32; num_channels * NUM_ANCHORS];
         buf[anchor_idx] = cx;
         buf[NUM_ANCHORS + anchor_idx] = cy;
         buf[2 * NUM_ANCHORS + anchor_idx] = w;
@@ -211,8 +249,29 @@ mod tests {
     }
 
     #[test]
+    fn rejects_too_few_channels() {
+        // 4 box channels but zero class channels → invalid.
+        let buf = vec![0.0f32; 4 * NUM_ANCHORS];
+        let lb = empty_lb();
+        let result = decode_outputs(&buf, lb, 640, 640, DEFAULT_CONF, DEFAULT_IOU);
+        assert!(
+            result.is_err(),
+            "4 channels (zero classes) must be rejected"
+        );
+    }
+
+    #[test]
     fn single_high_score_anchor_decodes_to_centre_box() {
-        let buf = synth_one_anchor(123, 320.0, 320.0, 100.0, 80.0, 7, 0.9);
+        let buf = synth_one_anchor(
+            LEGACY_COCO_NUM_CLASSES,
+            123,
+            320.0,
+            320.0,
+            100.0,
+            80.0,
+            7,
+            0.9,
+        );
         let lb = empty_lb();
         let dets = decode_outputs(&buf, lb, 640, 640, DEFAULT_CONF, DEFAULT_IOU).unwrap();
         assert_eq!(dets.len(), 1);
@@ -226,8 +285,48 @@ mod tests {
     }
 
     #[test]
+    fn single_class_candidate_decodes_to_class_zero() {
+        // `(1, 5, 8400)` shape produced by the #7b retrained candidate. The
+        // decoder must accept it without panicking and report `class_id = 0`
+        // for every detection regardless of how many anchors fire.
+        let buf = synth_one_anchor(1, 42, 200.0, 240.0, 60.0, 60.0, 0, 0.8);
+        assert_eq!(buf.len(), 5 * NUM_ANCHORS, "expected (4 + 1) * NUM_ANCHORS");
+        let lb = empty_lb();
+        let dets = decode_outputs(&buf, lb, 640, 640, DEFAULT_CONF, DEFAULT_IOU).unwrap();
+        assert_eq!(dets.len(), 1);
+        assert_eq!(dets[0].class_id, 0);
+        assert!((dets[0].score - 0.8).abs() < 1e-6);
+    }
+
+    #[test]
+    fn three_class_candidate_picks_highest_score() {
+        // Mid-cycle candidate with `NC = 3` (e.g. `tool` + 2 distractor
+        // classes if a future architecture decision adds them). Anchor has
+        // a stronger score on class 2 than class 0 — the decoder should
+        // pick class 2.
+        let mut buf = synth_one_anchor(3, 0, 100.0, 120.0, 50.0, 50.0, 0, 0.4);
+        // Overwrite class 2's channel for anchor 0 with a higher score.
+        // num_channels = 4 + 3 = 7; class 2 lives at channel index 4 + 2 = 6.
+        buf[6 * NUM_ANCHORS] = 0.7;
+        let lb = empty_lb();
+        let dets = decode_outputs(&buf, lb, 640, 640, DEFAULT_CONF, DEFAULT_IOU).unwrap();
+        assert_eq!(dets.len(), 1);
+        assert_eq!(dets[0].class_id, 2);
+        assert!((dets[0].score - 0.7).abs() < 1e-6);
+    }
+
+    #[test]
     fn below_threshold_anchors_are_dropped() {
-        let buf = synth_one_anchor(0, 100.0, 100.0, 50.0, 50.0, 0, DEFAULT_CONF * 0.5);
+        let buf = synth_one_anchor(
+            LEGACY_COCO_NUM_CLASSES,
+            0,
+            100.0,
+            100.0,
+            50.0,
+            50.0,
+            0,
+            DEFAULT_CONF * 0.5,
+        );
         let lb = empty_lb();
         let dets = decode_outputs(&buf, lb, 640, 640, DEFAULT_CONF, DEFAULT_IOU).unwrap();
         assert!(dets.is_empty());
@@ -235,7 +334,7 @@ mod tests {
 
     #[test]
     fn nms_suppresses_overlapping_lower_score() {
-        let mut buf = vec![0.0f32; NUM_CHANNELS * NUM_ANCHORS];
+        let mut buf = vec![0.0f32; LEGACY_COCO_NUM_CHANNELS * NUM_ANCHORS];
         // Anchor 0: high-score (0.9), large box centred at (320, 320).
         buf[0] = 320.0;
         buf[NUM_ANCHORS] = 320.0;
