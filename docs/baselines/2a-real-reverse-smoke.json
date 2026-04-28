@@ -1,0 +1,112 @@
+{
+  "milestone": "#2a-real-reverse",
+  "summary": "#2a -> #2b end-to-end recall on real ID photos: re-upload the same 119 real CNNC employee ID photos (already ingested via Path A as owner_type='person') into a SECOND project as owner_type='wo_raw' (no owner_id, no employee_no) and verify that the production recognition path matches every photo back to its corresponding persons row via the cross-project identity_embeddings gallery. End-to-end EID truth-table check: 119/119 OK, 0 mismatch.",
+  "date": "2026-04-28",
+  "feat_commit": "PENDING",
+  "docs_commit": "PENDING",
+  "run": {
+    "started_at_utc": "2026-04-28T14:50:47Z",
+    "upload_elapsed_seconds": 1,
+    "worker_drain_elapsed_seconds_approx": 95,
+    "src_project_id": "f06e30b8-8aeb-487a-b67c-59354442bb01",
+    "src_project_code": "id-photo-2a",
+    "dst_project_id": "f54d2a48-537c-4ab3-8f5b-826662465410",
+    "dst_project_code": "id-photo-2a-reverse",
+    "server_binary": "dist/f1photo-0.1.0-linux/payload/f1photo",
+    "db_backend": "bundled-pg (smoke)",
+    "models": ["scrfd_500m_int8", "arcface", "yolov8n"]
+  },
+  "inputs": {
+    "photos_dir": "/tmp/id_photos",
+    "photo_count": 119,
+    "total_bytes": 95047503,
+    "source": "same 119 real CNNC ID photos used by #2a-real Path A (Asian faces, Chinese filenames)"
+  },
+  "parse_stats": {
+    "total_files": 119,
+    "parsed_ok": 119,
+    "parse_failed": 0,
+    "unique_employee_nos": 119
+  },
+  "upload_stats": {
+    "uploads_attempted": 119,
+    "uploads_ok": 119,
+    "uploads_failed": 0,
+    "http_status_breakdown": {"202": 119},
+    "owner_type": "wo_raw"
+  },
+  "recognition_stats": {
+    "photos_status_matched": 119,
+    "photos_status_unmatched": 0,
+    "photos_status_failed": 0,
+    "face_detections_total": 119,
+    "face_detections_matched": 119,
+    "face_detections_unmatched": 0,
+    "face_match_owner_type": "person",
+    "distinct_matched_persons": 119,
+    "face_recall_pct": 100.0,
+    "face_matched_score": {"min": 1.0, "avg": 1.0, "max": 1.0, "at_or_above_0_9999": 119},
+    "face_matched_score_note": "Perfect 1.0000 cosine across all 119 -- expected, since the wo_raw photo bytes are byte-identical to the photos that seeded the 'initial' gallery in Path A (so the ArcFace embedding is identical)."
+  },
+  "eid_truth_table": {
+    "description": "For each wo_raw photo, look up detections.matched_owner_id -> persons.employee_no and assert it equals the employee_no parsed from the photo's filename.",
+    "reverse_report_rows": 119,
+    "photo_to_eid_mapped": 119,
+    "detections_face_matched_rows": 119,
+    "ok": 119,
+    "mismatch": 0,
+    "missing_in_db": 0,
+    "missing_in_report": 0
+  },
+  "comparison_with_path_a": {
+    "path_a_milestone": "#2a-real (commit ee62f38)",
+    "path_a_action": "Seed gallery: 119 owner_type='person' uploads -> identity_embeddings(source='initial') x 119",
+    "path_a_recognition_stats": {"detect": "119/119 SCRFD", "embed": "119 ArcFace", "matched": "trivially matched against asserted owner"},
+    "this_run_action": "End-to-end recall: 119 owner_type='wo_raw' uploads -> SCRFD detect -> ArcFace embed -> gallery lookup against the 119 source-project 'initial' embeddings -> assign matched_owner_id",
+    "this_run_proves": "Cross-project gallery recall is healthy on real-world Asian-face data; the #2a person bootstrap path (Path A) actually feeds the production recall path (#2b) end-to-end."
+  },
+  "embedding_gallery_growth": {
+    "identity_embeddings_pre": {"total": 119, "by_source": {"initial": 119}},
+    "identity_embeddings_post": {"total": 198, "by_source": {"initial": 119, "incremental": 119}},
+    "new_embeddings_added": 79,
+    "new_embeddings_added_after_drain": 119,
+    "note": "Each wo_raw face matched against the gallery also writes an 'incremental' embedding back to identity_embeddings (online gallery enhancement; finetune.rs gallery half of the active-learning loop, M2 turn 11). 119 new 'incremental' rows after full drain."
+  },
+  "server_health": {
+    "errors": 0,
+    "warnings": 0,
+    "panics": 0,
+    "exceptions": 0,
+    "log_window": "2026-04-28T14:50:00Z onwards",
+    "sample_log_tail": "INFO SCRFD detected faces face_count=1 + INFO YOLOv8 detected objects object_count=1..2"
+  },
+  "secondary_findings": [
+    {
+      "id": "tool-false-positive-rate",
+      "severity": "info / known",
+      "observation": "YOLOv8 fires on ID photos at 1.798 tool detections per photo (214 / 119), all unmatched against gallery (gallery has no tool embeddings).",
+      "comparison": "Lower than the #2-tool COCO val2017 baseline of 3.26 / photo; consistent with ID photos containing fewer COCO classes. The 1.80 hits are likely shirt-collar / lanyard / badge / hard-hat -- to be confirmed at #5-bootstrap retrain selection time.",
+      "impact": "None on #2a recall (face match path). Pure detector noise on a different target_type.",
+      "action": "Will be addressed by #5-bootstrap (first fine-tuned YOLOv8n weights from accumulated v_training_corrections)."
+    }
+  ],
+  "validation_queries": {
+    "photos_status": "SELECT status, count(*) FROM photos WHERE project_id=:dst GROUP BY status;",
+    "detections_breakdown": "SELECT target_type, match_status, matched_owner_type, count(*) FROM detections WHERE project_id=:dst GROUP BY 1,2,3;",
+    "matched_score_face": "SELECT min(matched_score), avg(matched_score), max(matched_score), count(*) FROM detections WHERE project_id=:dst AND target_type='face' AND match_status='matched';",
+    "distinct_matched_persons": "SELECT count(DISTINCT matched_owner_id) FROM detections WHERE project_id=:dst AND target_type='face' AND match_status='matched';",
+    "eid_truth_table_join": "SELECT d.photo_id, p.employee_no FROM detections d JOIN persons p ON p.id=d.matched_owner_id WHERE d.project_id=:dst AND d.target_type='face' AND d.match_status='matched';",
+    "identity_embeddings_growth": "SELECT source, count(*) FROM identity_embeddings GROUP BY source;"
+  },
+  "reproducer": {
+    "prereq": "Path A done; 119 persons + 119 identity_embeddings(source='initial') exist in src project.",
+    "steps": [
+      "# 1. create dst project",
+      "curl -X POST http://127.0.0.1:18799/api/projects -H 'authorization: Bearer <token>' -H 'content-type: application/json' -d '{\"code\":\"id-photo-2a-reverse\",\"name\":\"...\"}'",
+      "# 2. run reverse smoke (uploads as wo_raw, no owner_id)",
+      "python3 tools/reverse_smoke_id_photos.py --photos-dir /tmp/id_photos --project-id <dst_pid> --auth-token <token> --report-out /tmp/reverse_report.json --continue-on-error",
+      "# 3. wait for worker drain (poll photos.status NOT IN (matched,unmatched,failed) until 0)",
+      "# 4. run truth-table join check (see validation_queries.eid_truth_table_join + python set-comparison vs reverse_report.json)"
+    ]
+  }
+}

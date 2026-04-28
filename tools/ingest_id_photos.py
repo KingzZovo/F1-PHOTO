@@ -353,6 +353,36 @@ class ServerClient:
             )
         return json.loads(raw)
 
+    def upload_photo_as_wo_raw(
+        self,
+        project_id: str,
+        photo_path: Path,
+    ) -> Dict[str, Any]:
+        """Reverse smoke / production-recall path. owner_type='wo_raw', no
+        owner_id, no employee_no -- the worker is expected to detect + embed
+        the face crop and look it up against the cross-project
+        identity_embeddings gallery.
+        """
+        body, boundary = _build_multipart(
+            fields={"owner_type": "wo_raw"},
+            file_field="file",
+            file_path=photo_path,
+        )
+        status, _, raw = _http_request(
+            f"{self.base_url}/api/projects/{project_id}/photos",
+            method="POST",
+            headers=self._h(
+                {"content-type": f"multipart/form-data; boundary={boundary}"}
+            ),
+            body=body,
+            timeout=120.0,
+        )
+        if status not in (200, 201, 202):
+            raise RuntimeError(
+                f"upload failed for {photo_path.name}: status={status} body={raw[:300]!r}"
+            )
+        return json.loads(raw)
+
 
 # ---------------------------------------------------------------------------
 # CLI entry points
