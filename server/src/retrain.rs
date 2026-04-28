@@ -822,6 +822,136 @@ pub async fn record_promotion(
     Ok(id)
 }
 
+// =====================================================================
+// #7c-eval shadow-eval gate (skeleton).
+//
+// The orchestration that actually boots the server twice and runs the
+// fixtures (`tools/shadow_eval.py` companion) lands in #7c-eval-auto;
+// for now this module ships the SCHEMA + the GATE so the rest of the
+// pipeline (`promote --eval-deltas <path> [--force]`) can be wired up
+// fail-closed today and exercised against pre-computed deltas JSON.
+// =====================================================================
+
+/// Minimum face F1 (Western fixture, #2c-tune) the candidate must hold to
+/// be promotable. Same threshold King ratified at the end of #2c-tune.
+pub const FACE_F1_MIN: f64 = 0.667;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolDeltas {
+    pub current_recognition_items_mean: f64,
+    pub candidate_recognition_items_mean: f64,
+    /// candidate - current. Must be < 0 (strict drop) for the gate to PASS.
+    pub delta: f64,
+    pub fixture_photos: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FaceDeltas {
+    pub current_western_f1: f64,
+    pub candidate_western_f1: f64,
+    /// candidate - current; informational only — the gate uses an absolute
+    /// floor (`candidate_western_f1 >= FACE_F1_MIN`), not a relative delta.
+    pub delta: f64,
+    pub fixture_photos: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EvalDeltas {
+    pub tool: ToolDeltas,
+    pub face: FaceDeltas,
+    /// Sha256 of the live model the operator ran the eval against.
+    pub current_onnx_sha256: String,
+    /// Sha256 of the candidate the operator ran the eval against. The Rust
+    /// gate verifies this matches the candidate being promoted; a mismatch
+    /// is treated as an automatic FAIL (operator passed stale deltas).
+    pub candidate_onnx_sha256: String,
+    pub generated_at: String,
+}
+
+#[derive(Debug, Clone)]
+pub enum GateOutcome {
+    Pass,
+    Fail { reasons: Vec<String> },
+}
+
+impl GateOutcome {
+    pub fn is_pass(&self) -> bool {
+        matches!(self, GateOutcome::Pass)
+    }
+}
+
+/// Read + parse `eval_deltas.json` from disk. Empty / missing / malformed
+/// inputs are surfaced with file-path context so operators see *which*
+/// deltas file went wrong.
+pub fn load_eval_deltas(path: &Path) -> Result<EvalDeltas> {
+    let text = fs::read_to_string(path)
+        .with_context(|| format!("read eval-deltas: {}", path.display()))?;
+    let deltas: EvalDeltas = serde_json::from_str(&text)
+        .with_context(|| format!("parse eval-deltas json: {}", path.display()))?;
+    Ok(deltas)
+}
+
+/// Pure gate: PASS iff (a) tool `recognition_items_total` mean is *strictly*
+/// lower on the candidate AND (b) face Western F1 is at or above
+/// [`FACE_F1_MIN`]. All numeric checks are inclusive on the floor side and
+/// strict on the regression side. `expected_candidate_sha256`, when given,
+/// must equal `deltas.candidate_onnx_sha256` or the gate FAILs with a
+/// stale-deltas reason.
+pub fn evaluate_gate(deltas: &EvalDeltas, expected_candidate_sha256: Option<&str>) -> GateOutcome {
+    let mut reasons = Vec::new();
+
+    if let Some(expected) = expected_candidate_sha256 {
+        if expected != deltas.candidate_onnx_sha256 {
+            reasons.push(format!(
+                "candidate sha256 mismatch: deltas were generated against {} but promote target is {}",
+                deltas.candidate_onnx_sha256, expected,
+            ));
+        }
+    }
+
+    if deltas.tool.candidate_recognition_items_mean >= deltas.tool.current_recognition_items_mean {
+        reasons.push(format!(
+            "tool recognition_items_total mean did not drop: current={:.4}, candidate={:.4} (delta={:+.4}); gate requires strict <",
+            deltas.tool.current_recognition_items_mean,
+            deltas.tool.candidate_recognition_items_mean,
+            deltas.tool.delta,
+        ));
+    }
+
+    if deltas.face.candidate_western_f1 < FACE_F1_MIN {
+        reasons.push(format!(
+            "face Western F1 below floor: candidate={:.4} < FACE_F1_MIN={:.4} (current={:.4}, delta={:+.4})",
+            deltas.face.candidate_western_f1,
+            FACE_F1_MIN,
+            deltas.face.current_western_f1,
+            deltas.face.delta,
+        ));
+    }
+
+    if reasons.is_empty() {
+        GateOutcome::Pass
+    } else {
+        GateOutcome::Fail { reasons }
+    }
+}
+
+/// Wrap an [`EvalDeltas`] into the JSONB shape we persist on the
+/// `model_versions.eval_deltas` column. Adds a `gate.forced` flag so a
+/// promote that bypassed the gate via `--force` is auditable forever.
+pub fn eval_deltas_to_audit_json(deltas: &EvalDeltas, forced: bool) -> serde_json::Value {
+    let mut v = serde_json::to_value(deltas).expect("EvalDeltas serializable");
+    if let Some(obj) = v.as_object_mut() {
+        obj.insert(
+            "gate".into(),
+            serde_json::json!({
+                "forced": forced,
+                "face_f1_min": FACE_F1_MIN,
+            }),
+        );
+    }
+    v
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1226,5 +1356,133 @@ mod tests {
         let msg = format!("{:#}", err);
         assert!(msg.contains("dry-run"), "got: {}", msg);
         fs::remove_dir_all(&dir).ok();
+    }
+
+    // -----------------------------------------------------------------
+    // #7c-eval gate tests.
+    // -----------------------------------------------------------------
+
+    fn deltas_template() -> EvalDeltas {
+        EvalDeltas {
+            tool: ToolDeltas {
+                current_recognition_items_mean: 3.26,
+                candidate_recognition_items_mean: 2.40,
+                delta: -0.86,
+                fixture_photos: 42,
+            },
+            face: FaceDeltas {
+                current_western_f1: 0.667,
+                candidate_western_f1: 0.700,
+                delta: 0.033,
+                fixture_photos: 12,
+            },
+            current_onnx_sha256: "aaaa".into(),
+            candidate_onnx_sha256: "bbbb".into(),
+            generated_at: "2026-04-28T13:00:00+08:00".into(),
+        }
+    }
+
+    #[test]
+    fn evaluate_gate_pass_strict_drop_and_face_above_floor() {
+        let d = deltas_template();
+        let outcome = evaluate_gate(&d, Some("bbbb"));
+        assert!(outcome.is_pass(), "expected PASS, got {:?}", outcome);
+    }
+
+    #[test]
+    fn evaluate_gate_pass_at_face_floor_inclusive() {
+        // candidate_western_f1 == FACE_F1_MIN (0.667) is acceptable (>=).
+        let mut d = deltas_template();
+        d.face.candidate_western_f1 = FACE_F1_MIN;
+        d.face.delta = FACE_F1_MIN - d.face.current_western_f1;
+        let outcome = evaluate_gate(&d, None);
+        assert!(
+            outcome.is_pass(),
+            "expected PASS at floor, got {:?}",
+            outcome
+        );
+    }
+
+    #[test]
+    fn evaluate_gate_fail_tool_no_drop() {
+        let mut d = deltas_template();
+        d.tool.candidate_recognition_items_mean = d.tool.current_recognition_items_mean; // tie -> FAIL (strict)
+        d.tool.delta = 0.0;
+        match evaluate_gate(&d, None) {
+            GateOutcome::Fail { reasons } => {
+                assert_eq!(reasons.len(), 1);
+                assert!(reasons[0].contains("tool recognition_items_total"));
+            }
+            other => panic!("expected FAIL, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn evaluate_gate_fail_face_below_floor() {
+        let mut d = deltas_template();
+        d.face.candidate_western_f1 = 0.500;
+        d.face.delta = -0.167;
+        match evaluate_gate(&d, None) {
+            GateOutcome::Fail { reasons } => {
+                assert_eq!(reasons.len(), 1);
+                assert!(reasons[0].contains("face Western F1 below floor"));
+            }
+            other => panic!("expected FAIL, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn evaluate_gate_fail_both_lists_two_reasons() {
+        let mut d = deltas_template();
+        d.tool.candidate_recognition_items_mean = 4.00; // regressed UP
+        d.tool.delta = 0.74;
+        d.face.candidate_western_f1 = 0.300;
+        d.face.delta = -0.367;
+        match evaluate_gate(&d, None) {
+            GateOutcome::Fail { reasons } => {
+                assert_eq!(reasons.len(), 2, "got: {:?}", reasons);
+            }
+            other => panic!("expected FAIL, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn evaluate_gate_fail_sha_mismatch() {
+        let d = deltas_template();
+        // Operator passed deltas generated against `bbbb` but the actual
+        // promote target is `cccc`.
+        match evaluate_gate(&d, Some("cccc")) {
+            GateOutcome::Fail { reasons } => {
+                assert!(
+                    reasons.iter().any(|r| r.contains("sha256 mismatch")),
+                    "got: {:?}",
+                    reasons
+                );
+            }
+            other => panic!("expected FAIL on sha mismatch, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn load_eval_deltas_round_trip() {
+        let dir = unique_tmpdir("deltas");
+        let path = dir.join("deltas.json");
+        let d = deltas_template();
+        fs::write(&path, serde_json::to_string_pretty(&d).unwrap()).unwrap();
+        let loaded = load_eval_deltas(&path).expect("load");
+        assert_eq!(loaded.candidate_onnx_sha256, d.candidate_onnx_sha256);
+        assert!((loaded.tool.delta - d.tool.delta).abs() < 1e-9);
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn eval_deltas_to_audit_json_marks_forced() {
+        let d = deltas_template();
+        let v = eval_deltas_to_audit_json(&d, true);
+        assert_eq!(v["gate"]["forced"], json!(true));
+        assert_eq!(v["gate"]["face_f1_min"], json!(FACE_F1_MIN));
+        assert_eq!(v["candidate_onnx_sha256"], json!("bbbb"));
+        let v2 = eval_deltas_to_audit_json(&d, false);
+        assert_eq!(v2["gate"]["forced"], json!(false));
     }
 }

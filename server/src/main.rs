@@ -120,6 +120,8 @@ async fn main() -> Result<()> {
                 models_dir,
                 kind,
                 notes,
+                eval_deltas,
+                force,
                 dry_run,
             } => {
                 retrain_promote(
@@ -129,6 +131,8 @@ async fn main() -> Result<()> {
                     models_dir.as_deref(),
                     &kind,
                     notes.as_deref(),
+                    eval_deltas.as_deref(),
+                    force,
                     dry_run,
                 )
                 .await
@@ -602,6 +606,7 @@ async fn retrain_train(
 /// `#7c-skel` ships unconditional promotion (the shadow-eval gate lands
 /// in `#7c-eval`). `--dry-run` plans the move and prints sha256 / size /
 /// cycle / archive path without touching the filesystem or the database.
+#[allow(clippy::too_many_arguments)]
 async fn retrain_promote(
     cfg: Config,
     candidate: &str,
@@ -609,6 +614,8 @@ async fn retrain_promote(
     models_dir_override: Option<&str>,
     kind: &str,
     notes: Option<&str>,
+    eval_deltas_path: Option<&str>,
+    force: bool,
     dry_run: bool,
 ) -> Result<()> {
     let pool = db::connect(&cfg).await?;
@@ -658,6 +665,81 @@ async fn retrain_promote(
     }
     println!("dry_run               : {}", plan.dry_run);
 
+    // -------------------------------------------------------------
+    // #7c-eval shadow-eval gate.
+    //
+    // Two acceptable shapes:
+    //   (a) --eval-deltas <path>: load + evaluate. PASS proceeds; FAIL
+    //       refuses unless --force is also set.
+    //   (b) no --eval-deltas: refuses outright unless --force is set
+    //       (forced, no-deltas promotes are recorded with a synthetic
+    //       eval_deltas.gate.forced=true row).
+    //
+    // dry-run still prints the gate decision but always returns Ok.
+    // -------------------------------------------------------------
+
+    let loaded_deltas = if let Some(p) = eval_deltas_path {
+        let path = PathBuf::from(p);
+        let d = tokio::task::spawn_blocking(move || retrain::load_eval_deltas(&path)).await??;
+        Some(d)
+    } else {
+        None
+    };
+
+    let gate_outcome = match loaded_deltas.as_ref() {
+        Some(d) => retrain::evaluate_gate(d, Some(plan.candidate_sha256.as_str())),
+        None => retrain::GateOutcome::Fail {
+            reasons: vec![
+                "--eval-deltas not provided; pass --force to bypass (recorded as gate.forced=true)"
+                    .to_string(),
+            ],
+        },
+    };
+
+    println!();
+    if let Some(d) = loaded_deltas.as_ref() {
+        println!("-- shadow-eval gate (#7c-eval) --");
+        println!(
+            "tool recognition_items_total mean : current={:.4} candidate={:.4} delta={:+.4} (n={})",
+            d.tool.current_recognition_items_mean,
+            d.tool.candidate_recognition_items_mean,
+            d.tool.delta,
+            d.tool.fixture_photos,
+        );
+        println!(
+            "face Western F1                   : current={:.4} candidate={:.4} delta={:+.4} (n={}, floor={:.4})",
+            d.face.current_western_f1,
+            d.face.candidate_western_f1,
+            d.face.delta,
+            d.face.fixture_photos,
+            retrain::FACE_F1_MIN,
+        );
+    } else {
+        println!("-- shadow-eval gate (#7c-eval): no --eval-deltas supplied --");
+    }
+    match &gate_outcome {
+        retrain::GateOutcome::Pass => println!("gate                              : ✓ PASS"),
+        retrain::GateOutcome::Fail { reasons } => {
+            println!("gate                              : ✗ FAIL");
+            for r in reasons {
+                println!("  - {}", r);
+            }
+        }
+    }
+    if !gate_outcome.is_pass() {
+        if force {
+            println!(
+                "force                             : ⚠  bypass enabled — promote will proceed"
+            );
+        } else if !plan.dry_run {
+            anyhow::bail!(
+                "shadow-eval gate FAILed and --force was not supplied; refusing to promote"
+            );
+        } else {
+            println!("force                             : (dry-run; would have refused)");
+        }
+    }
+
     if plan.dry_run {
         println!();
         println!("dry-run: not renaming files, not inserting model_versions row.");
@@ -669,13 +751,29 @@ async fn retrain_promote(
     tokio::task::spawn_blocking(move || retrain::execute_filesystem_promote(&plan_for_exec))
         .await??;
 
+    // Build the audit JSON: real deltas (with gate.forced flag) when we have
+    // them, else a forced-without-deltas synthetic blob.
+    let audit_json = match loaded_deltas.as_ref() {
+        Some(d) => Some(retrain::eval_deltas_to_audit_json(
+            d,
+            force && !gate_outcome.is_pass(),
+        )),
+        None => Some(serde_json::json!({
+            "gate": {
+                "forced": true,
+                "face_f1_min": retrain::FACE_F1_MIN,
+                "missing_eval_deltas": true,
+            }
+        })),
+    };
+
     let id = retrain::record_promotion(
         &pool,
         &plan.kind,
         &plan.candidate_sha256,
         plan.candidate_size,
         plan.corrections_consumed,
-        None, // eval_deltas: filled in by #7c-eval
+        audit_json,
         None, // promoted_by: CLI invocation has no logged-in user yet
         plan.notes.as_deref(),
     )

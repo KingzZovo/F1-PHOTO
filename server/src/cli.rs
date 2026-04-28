@@ -207,10 +207,16 @@ pub enum RetrainDetectorAction {
     /// records an audit row in `model_versions` (cycle, sha256, file_size,
     /// corrections_consumed, eval_deltas, promoted_at, promoted_by, notes).
     ///
-    /// `#7c-skel` ships unconditional promotion (no shadow-eval gate); the
-    /// gate (#2-tool fixture + #2c-tune face fixture deltas, fail-closed on
-    /// regressions) lands in `#7c-eval`. Use `--dry-run` to preview the
-    /// plan without touching the filesystem or the database.
+    /// `#7c-eval` adds a fail-closed shadow-eval gate on top of #7c-skel:
+    /// pass `--eval-deltas <path>` to require that the deltas JSON show
+    /// (a) tool `recognition_items_total` mean strictly lower on the
+    /// candidate AND (b) face Western F1 (#2c-tune fixture) at or above
+    /// 0.667. Without `--eval-deltas` the promote refuses to run unless
+    /// `--force` is passed (operator escape-hatch — the bypass is recorded
+    /// in `model_versions.eval_deltas.gate.forced=true`).
+    ///
+    /// Use `--dry-run` to preview the plan + gate decision without
+    /// touching the filesystem or the database.
     Promote {
         /// Candidate ONNX path. Must be an existing non-empty file,
         /// typically the `--candidate-out` of a previous `train` run.
@@ -231,6 +237,17 @@ pub enum RetrainDetectorAction {
         /// Optional free-form note recorded in `model_versions.notes`.
         #[arg(long)]
         notes: Option<String>,
+        /// Path to a `eval_deltas.json` produced by `tools/shadow_eval.py`
+        /// (or hand-crafted in the same shape — see
+        /// `retrain::EvalDeltas`). The promote gate refuses to run
+        /// without this unless `--force` is passed.
+        #[arg(long)]
+        eval_deltas: Option<String>,
+        /// Bypass the shadow-eval gate. The bypass is recorded forever
+        /// in `model_versions.eval_deltas.gate.forced=true`. Use only
+        /// for manual operator overrides; never in automation.
+        #[arg(long)]
+        force: bool,
         /// Plan the promote and report sha256 / file size / cycle number
         /// without renaming files or inserting a `model_versions` row.
         #[arg(long)]
