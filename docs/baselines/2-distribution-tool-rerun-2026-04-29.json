@@ -1,0 +1,47 @@
+{
+  "comparison": {
+    "distributions_equal": true,
+    "distributions_sha256_new": "f1c55c8b60648ab8f015033dd6e55bc107f11115d5e07a715472f5d4ef54972c",
+    "distributions_sha256_old": "f1c55c8b60648ab8f015033dd6e55bc107f11115d5e07a715472f5d4ef54972c",
+    "meta_equal_post_strip": true,
+    "method": "deep-equal of distributions+meta(stripped)+per_photo after stripping per-run UUIDs and re-sorting per_photo by path",
+    "per_photo_equal": true,
+    "per_photo_new_len": 42,
+    "per_photo_old_len": 42,
+    "per_photo_sha256_new": "7a766ddcea83767ecb968288b4109104bab826b66304cf342d106f1e3092acce",
+    "per_photo_sha256_old": "7a766ddcea83767ecb968288b4109104bab826b66304cf342d106f1e3092acce"
+  },
+  "kind": "no-regression verification rerun",
+  "milestone": "#2-tool-rerun-2026-04-29",
+  "next_steps": [
+    "No action required from this rerun. The tool baseline is canonical for the next #5-bootstrap shadow-eval gate.",
+    "When #5-bootstrap candidate weights ship, rerun this same baseline against the candidate ONNX and compare tool_count / tool_score_quantiles / recognition_items_total deltas as the regression gate.",
+    "Same rerun pattern can be applied to the face baseline (docs/baselines/2-distribution-face-baseline.json) when face-side weights change."
+  ],
+  "non_goals": [
+    "Not a precision/recall measurement (use tools/eval_pr.py + #2c fixture for that).",
+    "Not a labelled fixture; pure descriptive distribution.",
+    "Does not exercise the wo_raw recall path or any reverse-smoke logic (see 2a-real-reverse-smoke baseline for that axis)."
+  ],
+  "parent_baseline": {
+    "captured_at": "2026-04-27",
+    "commit_introduced_in": "pre-#2-family",
+    "path": "docs/baselines/2-distribution-tool-baseline.json"
+  },
+  "rerun": {
+    "captured_at": "2026-04-29 (Asia/Shanghai)",
+    "driver": "tools/eval_distribution.py against the live server (PID 2955495 :18799, no reboot, no orchestrator)",
+    "fixture": "tests/fixtures/tool/baseline/**/*.jpg",
+    "photo_count": 42,
+    "project_id": "86bd13e5-c059-4afa-be51-9b59d041c7b2",
+    "report_archive": "/tmp/2-tool-rerun-2026-04-29.json (not committed; equivalent to parent baseline modulo project/work-order UUIDs)",
+    "thresholds_default": {
+      "augment_upper": 0.95,
+      "low_lower": 0.5,
+      "match_lower": 0.62
+    },
+    "work_order_id": "3fd11d2b-1e52-4e09-a96b-1835c8a46943"
+  },
+  "verdict": "PASS \u2014 zero engine drift over 2026-04-27 \u2192 2026-04-29 window. Tool / face / device count distributions, score quantiles (face min/p25/median/p75/max + tool min/p25/median/p75/max), recognition_items_total distribution, photo_status, recognition_items_status, and every per_photo row are byte-identical to the parent baseline.",
+  "why_run": "Bracket the recent #2-family work (#2a / #2a-real / #2a-real-reverse / #2c-asia / #5-bootstrap-collector / pipeline #3.3 doc). None of those touched the recognition engine, but the rerun closes the verification loop so future #5-bootstrap retrain has a solid identity-baseline to A/B against."
+}
