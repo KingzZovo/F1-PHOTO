@@ -1,0 +1,133 @@
+{
+  "milestone": "#2a-real",
+  "summary": "#2a person-bootstrap path A end-to-end run on 119 real CNNC ID photos (Asian faces, Chinese filenames). Validates the cold-start gallery seed at production scale and supplies the first real-world detection-rate baseline (an Asian-face counterpart to the #2 / #2c synthetic-fixture baselines, partially de-risking #2c-asia).",
+  "run": {
+    "date_local": "2026-04-28",
+    "timezone": "Asia/Shanghai",
+    "started_at_utc": "2026-04-28T14:10:59Z",
+    "server_version": "0.1.0",
+    "binary_path": "dist/f1photo-0.1.0-linux/payload/f1photo",
+    "sandbox_project_id": "f06e30b8-8aeb-487a-b67c-59354442bb01",
+    "sandbox_project_code": "id-photo-2a",
+    "db": {
+      "kind": "bundled-pg",
+      "port": 55444,
+      "user": "f1photo",
+      "database": "f1photo_prod"
+    }
+  },
+  "inputs": {
+    "source": "CNNC (China National Nuclear Corp.) employee uniform ID photos, Asian, supplied as id_photos.tar.zip",
+    "archive_path": "/tmp/id_photos_archive/id_photos.tar.zip",
+    "archive_bytes": 92292885,
+    "archive_format_detected": "zip (magic 50 4b 03 04; suffix .tar.zip is misleading)",
+    "photos_dir": "/tmp/id_photos",
+    "photos_total": 119,
+    "photos_total_bytes": 95047503,
+    "extension_breakdown": { "jpg": 108, "jpeg": 3, "png": 8 },
+    "uppercase_extension_count": 25,
+    "separator_breakdown": { "plus": 16, "hyphen": 1, "none": 102 },
+    "name_char_length": { "2_chars": 29, "3_chars": 90 },
+    "non_cjk_names": 0,
+    "cohort_distribution": {
+      "2013": 1, "2014": 4, "2015": 5, "2016": 7, "2017": 5, "2018": 1,
+      "2019": 4, "2020": 2, "2021": 6, "2022": 5, "2023": 20, "2024": 35, "2025": 24
+    }
+  },
+  "parse_stats": {
+    "total_files": 119,
+    "parsed_ok": 119,
+    "parse_failed": 0,
+    "unique_employee_nos": 119,
+    "duplicate_eids": {},
+    "parse_success_rate": 1.0
+  },
+  "ingest_stats": {
+    "persons_created": 119,
+    "persons_reused": 0,
+    "photo_uploads_ok": 119,
+    "photo_uploads_failed": 0,
+    "upload_wallclock_seconds": 2,
+    "manifest_path": "/tmp/id_manifest.json",
+    "report_path": "/tmp/id_ingest_report.json"
+  },
+  "recognition_stats": {
+    "worker_drain_seconds": 20,
+    "photo_status_distribution": { "matched": 119, "pending": 0, "failed": 0 },
+    "detections_total": 119,
+    "detections_by_target_type": { "face": 119, "tool": 0, "device": 0 },
+    "detections_per_photo": { "1": 119 },
+    "photos_with_zero_detections": 0,
+    "identity_embeddings_initial_person": 119,
+    "embeddings_per_person": { "1": 119 },
+    "persons_without_embedding": 0
+  },
+  "detection_rates": {
+    "scrfd_detection_rate": 1.0,
+    "scrfd_detection_rate_text": "119 / 119 = 100.0 %",
+    "arcface_embedding_rate": 1.0,
+    "arcface_embedding_rate_text": "119 / 119 = 100.0 %",
+    "comparison": {
+      "#2_face_distribution_baseline": {
+        "scrfd_rate": 0.667,
+        "context": "42-photo wo_raw run on the LFW-funneled + jack139 fixture; mixed Western (32) + Eastern (10) buckets",
+        "baseline_file": "docs/baselines/2-distribution-face-baseline.json"
+      },
+      "#2c_eastern_bucket": {
+        "scrfd_rate": 0.0,
+        "context": "10 jack139/face-dataset Asian-celebrity crops at the default fixture resolution (256x256 bicubic upscaled); bottlenecked at SCRFD detection — blocks #2c-asia",
+        "baseline_file": "docs/baselines/2c-recognition-pr.json"
+      },
+      "#2a_real_id_photos": {
+        "scrfd_rate": 1.0,
+        "context": "119 real CNNC ID photos (controlled lighting, frontal pose, ~94 % portrait crops, JPEG/PNG natively); SCRFD has no detection failures on this domain",
+        "baseline_file": "docs/baselines/2a-real-id-photos.json"
+      }
+    }
+  },
+  "server_health": {
+    "models_loaded": ["FaceDetect", "FaceEmbed", "ObjectDetect", "GenericEmbed", "AngleClassify"],
+    "models_loaded_count": 5,
+    "ort_runtime": "1.20.1",
+    "healthz": "ok",
+    "readyz_db": "ok",
+    "readyz_status": "ready",
+    "serve_log_error_count": 0,
+    "serve_log_warn_count": 0,
+    "serve_log_panic_count": 0,
+    "serve_log_traceback_count": 0
+  },
+  "sample_employees": [
+    { "employee_no": "20171805", "name": "张芮齐", "separator": "+", "ext": ".JPG" },
+    { "employee_no": "20190746", "name": "张星宝", "separator": "none", "ext": ".png" },
+    { "employee_no": "20251646", "name": "杨嘉兴", "dept_tag": "网控电气", "separator": "none", "ext": ".jpg" },
+    { "employee_no": "20241247", "name": "王健鸿", "separator": "none", "ext": ".jpg" },
+    { "employee_no": "20241261", "name": "王楷煌", "separator": "+", "ext": ".jpg" }
+  ],
+  "secondary_findings": [
+    {
+      "id": "persons-photo-count-zero",
+      "summary": "persons.photo_count is not incremented by the owner-known person bootstrap path.",
+      "observed": "After 119 successful uploads with owner_type=person + owner_id, SUM(persons.photo_count) = 0 (expected 119); each photos row is in status='matched' and identity_embeddings count is correct (119/119), so the recognition path itself is healthy.",
+      "hypothesis": "The persons.photo_count denormalised counter is likely only updated on a different path (e.g. an unmatched -> matched reconciliation in the wo_raw flow) and not on the owner-known bootstrap path that #2a takes. Existing client UIs that surface 'photos per person' would under-count for cold-start uploads.",
+      "impact": "Cosmetic / UI-only at this point; does not affect recognition correctness, gallery seeding, or wo_raw recall.",
+      "action": "Filed for King to triage; no fix in this commit (out of scope for the path-A evidence run)."
+    }
+  ],
+  "validation_queries": [
+    "SELECT status, COUNT(*) FROM photos WHERE project_id=$PID GROUP BY status",
+    "SELECT COUNT(*) FROM identity_embeddings WHERE source='initial' AND owner_type='person' AND source_project=$PID",
+    "SELECT n_emb, COUNT(*) FROM (SELECT owner_id, COUNT(*) AS n_emb FROM identity_embeddings WHERE source='initial' AND owner_type='person' AND source_project=$PID GROUP BY owner_id) s GROUP BY n_emb",
+    "SELECT target_type, COUNT(*) FROM detections WHERE project_id=$PID GROUP BY target_type",
+    "SELECT COUNT(*) FROM persons p WHERE NOT EXISTS (SELECT 1 FROM identity_embeddings ie WHERE ie.owner_id=p.id AND ie.source='initial' AND ie.owner_type='person' AND ie.source_project=$PID)"
+  ],
+  "reproducer": {
+    "prereqs": [
+      "119 ID photos under /tmp/id_photos (filenames matching ^(?P<eid>[0-9]{8})[+-]?(?P<name>[\\u4e00-\\u9fff]+)(?P<dept>[\\u4e00-\\u9fff]*)\\.(?:jpg|jpeg|png)$, case-insensitive ext)",
+      "f1photo serve booted on 127.0.0.1:18799 with bundled-pg, F1P_BUNDLED_PG_PASSWORD set, admin user 'smoke_admin'/'smoke-admin-pwd-12345' bootstrapped",
+      "empty project created (e.g. code='id-photo-2a'); PROJECT_ID stored in $PID"
+    ],
+    "command": "python3 tools/ingest_id_photos.py --mode ingest --photos-dir /tmp/id_photos --base-url http://127.0.0.1:18799 --admin-user smoke_admin --admin-pwd smoke-admin-pwd-12345 --project-id $PID --manifest-out /tmp/id_manifest.json --report-out /tmp/id_ingest_report.json --continue-on-error",
+    "poll_drain": "SELECT status, COUNT(*) FROM photos WHERE project_id='$PID' GROUP BY status -- expect matched=119 within ~30s"
+  }
+}

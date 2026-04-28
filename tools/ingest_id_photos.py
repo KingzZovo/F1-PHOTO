@@ -265,7 +265,12 @@ class ServerClient:
             raise RuntimeError(
                 f"login failed: status={status} body={raw[:300]!r}"
             )
-        token = json.loads(raw).get("token")
+        # Server response field has flipped between releases:
+        #   - older builds returned {"token": ...}
+        #   - current build returns {"access_token": ..., "token_type": "Bearer", ...}
+        # Accept either so the harness keeps working across both.
+        body_json = json.loads(raw)
+        token = body_json.get("token") or body_json.get("access_token")
         if not token:
             raise RuntimeError(f"login response missing token: {raw[:300]!r}")
         return cls(base_url=base_url.rstrip("/"), token=token)
