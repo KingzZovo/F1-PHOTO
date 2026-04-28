@@ -1,0 +1,98 @@
+{
+  "milestone": "#5-bootstrap-collector",
+  "milestone_label": "#5-bootstrap correction-loop collector tool + first smoke against the wo_raw reverse-smoke project",
+  "status": "done",
+  "status_note": "Read-only psql-driven CLI (tools/bootstrap_correction_collector.py) that pulls unmatched detections from a project and emits a CSV+JSON correction worksheet with reviewer-fillable columns (corrected_label, corrected_owner_type, corrected_owner_id, suppress, reviewer, reviewed_at, notes). Skeleton for the >=50-correction accumulation gate that #5-bootstrap (retrain) is queued behind. Mutates nothing.",
+  "created_at": "2026-04-29T00:36+08:00",
+  "feat_commit": "PENDING",
+  "docs_commit": "PENDING",
+  "tool": {
+    "path": "tools/bootstrap_correction_collector.py",
+    "interface": "python3 tools/bootstrap_correction_collector.py [--project-id <uuid>] [--target-type {tool,face,device}] [--match-status {unmatched,low,matched}] [--min-score F] [--max-score F] [--limit N] [--out-csv PATH] [--out-json PATH] [--summary-only]",
+    "data_source": "bundled-pg via psql (no API token required); read-only joins on detections + photos + projects",
+    "output_csv_columns": [
+      "detection_id", "photo_id", "project_id", "project_code", "photo_hash",
+      "photo_path", "photo_width", "photo_height", "target_type", "match_status",
+      "score", "class_id", "bbox_source",
+      "bbox_x1", "bbox_y1", "bbox_x2", "bbox_y2",
+      "bbox_w_px", "bbox_h_px", "bbox_area_px", "created_at",
+      "corrected_label", "corrected_owner_type", "corrected_owner_id",
+      "suppress", "reviewer", "reviewed_at", "notes"
+    ],
+    "json_schema_version": 1,
+    "reviewer_workflow": "emit -> human edits the seven trailing reviewer columns in CSV -> downstream importer (TBD, separate milestone) translates labelled rows into PATCH /api/projects/<pid>/recognition_items/<id>/correct calls so corrections show up in the existing recognition_items.corrected_owner_* columns and the v_training_corrections view that #7a retrain consumes",
+    "safety": "read-only; no DB mutations; idempotent re-run"
+  },
+  "smoke_run": {
+    "target_project_id": "f54d2a48-537c-4ab3-8f5b-826662465410",
+    "target_project_code": "id-photo-2a-reverse",
+    "args": {
+      "project_id": "f54d2a48-537c-4ab3-8f5b-826662465410",
+      "target_type": "tool",
+      "match_status": "unmatched",
+      "min_score": null,
+      "max_score": null,
+      "limit": null
+    },
+    "detection_count": 214,
+    "distinct_photos": 119,
+    "detections_per_photo": 1.7983193277310925,
+    "score_quantiles": {
+      "min": 0.25595909357070923,
+      "p25": 0.8572587668895721,
+      "median": 0.8905814290046692,
+      "p75": 0.9115872234106064,
+      "max": 0.9504894614219666,
+      "count": 214
+    },
+    "bbox_area_px_quantiles": {
+      "min": 2549.489504390862,
+      "p25": 52021.997936267406,
+      "median": 253167.1327503816,
+      "p75": 1164602.1218742712,
+      "max": 29241280.87890625,
+      "count": 214
+    },
+    "class_id_histogram": {
+      "0": 119,
+      "27": 95
+    },
+    "output_csv_lines": 215,
+    "output_csv_path": "/tmp/corrections-2026-04-29-smoke.csv",
+    "output_json_path": "/tmp/corrections-2026-04-29-smoke.json",
+    "reconciliation": {
+      "matches_2c_asia_baseline": true,
+      "notes": "detection_count + distinct_photos + per_photo + score quantiles all match docs/baselines/2c-asia.json tool_false_positive_finding exactly (214 / 119 / 1.7983 / median 0.8906 / p75 0.9116 / max 0.9505)."
+    }
+  },
+  "new_finding_class_id_breakdown": {
+    "context": "#2c-asia recorded the per-photo tool FP rate and score quantiles, but did NOT break the 214 false positives down by COCO class_id. The collector smoke surfaces this for the first time.",
+    "breakdown": {
+      "0": { "label": "person", "count": 119, "per_photo": 1.0, "interpretation": "YOLOv8 fires class=person on every single ID photo (1 / photo, 119 / 119 cohort) -- the subject's own torso is being labelled person but emitted on the tool detection path because target_type for class 0..79 is hard-coded to 'tool' on the wo_raw recognition path (#5-skel scope revision)." },
+      "27": { "label": "tie", "count": 95, "per_photo": 0.7983, "interpretation": "YOLOv8 fires class=tie on 95 / 119 ID photos -- consistent with the #2c-asia visual hypothesis that uniform collars / lanyards / employee badges read as 'tie' to a COCO-trained YOLOv8n." }
+    },
+    "actionable": "Fixes the score-threshold filter dead-end called out in #2c-asia tool_false_positive_finding: a class-specific blacklist that drops {person, tie} on the tool detection path would clear 214 / 214 = 100 % of these false positives on this cohort with no recall risk on the actual #5-bootstrap target classes (real worksite tools). Class 27 alone cuts 95 / 214 (44.4 %) without touching person.",
+    "routes_to": ["#5-bootstrap (corrections gate fed by collector output)", "future class-specific suppression in worker/mod.rs run_real_pipeline (server Rust -- not in scope of this milestone)"]
+  },
+  "validation": {
+    "summary_only_run": "python3 tools/bootstrap_correction_collector.py --summary-only -> detection_count=214, distinct_photos=119, per_photo=1.7983",
+    "full_run_csv_lines": 215,
+    "full_run_first_data_row_id": 434,
+    "full_run_first_data_row_score": 0.9504894614219666,
+    "full_run_json_row_count": 214,
+    "full_run_json_schema_version": 1,
+    "reviewer_columns_blank_on_emit": true,
+    "db_mutations": 0
+  },
+  "non_goals": [
+    "This milestone does NOT yet ship a labelled-corrections importer back into recognition_items.",
+    "This milestone does NOT yet feed #7a retrain (no corrections accumulated; gate is >=50).",
+    "This milestone does NOT modify server Rust or the wo_raw recognition path (per project rules).",
+    "This milestone does NOT draw bboxes onto images."
+  ],
+  "next_steps": [
+    "Have a human reviewer label 50+ rows from /tmp/corrections-*.csv against the existing class_id breakdown (person + tie are both pure FPs on the ID-photo cohort).",
+    "Add a small importer (separate milestone) that reads the labelled CSV and posts PATCH /api/projects/<pid>/recognition_items/<id>/correct so corrections land in recognition_items.corrected_owner_* (and therefore v_training_corrections / #7a retrain).",
+    "Once >=50 corrections are recorded, exercise the existing #7a -> #7b-train -> #7c-skel/#7c-eval pipeline end-to-end -- that closes #5-bootstrap."
+  ]
+}
