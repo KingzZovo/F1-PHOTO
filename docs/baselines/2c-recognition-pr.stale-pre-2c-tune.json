@@ -1,4 +1,7 @@
 {
+  "_stale": true,
+  "superseded_by": "docs/baselines/2c-tune-recognition-pr.json",
+  "_stale_reason": "Pre-#2c-tune thresholds (low_lower=0.5, match_lower=0.62). server/src/inference/recall.rs Thresholds::DEFAULT was retuned to (0.30, 0.40) at #2c-tune commit; this report no longer reflects the running server.",
   "milestone": "#2c face recognition P/R baseline",
   "thresholds_default": {
     "low_lower": 0.5,
