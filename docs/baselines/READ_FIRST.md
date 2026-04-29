@@ -1,6 +1,6 @@
 # Baselines 读你之前先看这
 
-> 最后刷新：2026-04-29。
+> 最后刷新：2026-04-29 PM。
 >
 > `docs/baselines/` 里有不同阶段的 evaluation 产物，部分**同名不同阈值**，直接读件名会混乱。以下是当前真值表。
 
@@ -17,6 +17,8 @@
 | #5-bootstrap 采集快照 | `5-bootstrap-collector-smoke.json` |
 | #5-bootstrap importer dry-run | `5-bootstrap-importer-smoke.json` |
 | #7c-eval-self-wiring | `7c-eval-self-wiring-2026-04-29.json` |
+| Gallery 质量快照（2026-04-29 PM） | `gallery-quality-audit-2026-04-29.json` |
+| SCRFD eastern fixture 诊断（2026-04-29 PM） | `scrfd-eastern-fixture-diagnosis-2026-04-29.md` |
 
 ## Stale / 已被取代（不要参考！）
 
@@ -29,7 +31,7 @@
 ## 阈值跳起记录
 
 - **#2c 阶段**：`Thresholds::DEFAULT { low_lower: 0.50, match_lower: 0.62, augment_upper: 0.95 }`。F1 在 30 张 fixture 上只有 0.154。
-- **#2c-tune 重调 (HEAD `9dba118` 仍生效)**：`Thresholds::DEFAULT { low_lower: 0.30, match_lower: 0.40, augment_upper: 0.95 }`。F1 提到 0.500（overall）。
+- **#2c-tune 重调 (HEAD `e042e99` 仍生效)**：`Thresholds::DEFAULT { low_lower: 0.30, match_lower: 0.40, augment_upper: 0.95 }`。F1 提到 0.500（overall）。
 - 调整在 `server/src/inference/recall.rs:52-55`。所有评估脚本 (`tools/eval_pr.py`) 的 `DEFAULT` 变量必须与 server 保持一致，不然会产生 stale baseline。
 
 ## 参考表：2c-tune-recognition-pr.json 自洽验证
@@ -53,6 +55,6 @@ western.tp + eastern.tp ≡ overall.tp ✓、overall ≡ sweep@default ✓、算
 
 ## 2026-04-29 PM 补充
 
--  — 当日  +  口径快照（只读，无副作用）。127 persons / 248 embeds；4 cold-start、6 only-initial、119 complete。
--  — eastern face_detection_rate=0.0 根因定调。结论：**fixture 双重插值 + SCRFD-500m 容量不足**，不是 recall 阈值问题。King 需从 A/B/C/D 四个修复选项中选择（详见该 MD）。
-- 今日未重跑 face PR baseline（）。原因：自  (e8c3358) 后 server inference 路径零漂移，今日 HEAD =  + 3 个不影响 face PR 的 commit (//)。 仍是当前真值。
+- `gallery-quality-audit-2026-04-29.json` — 当日 `identity_embeddings` + `persons` 口径快照（只读，无副作用）。**127 persons / 248 embeds**；4 cold-start、6 only-initial、119 complete（93.7%）。
+- `scrfd-eastern-fixture-diagnosis-2026-04-29.md` — eastern `face_detection_rate=0.0` 根因定调。**结论：fixture 双重插值 + SCRFD-500m 容量不足**，不是 recall 阈值问题。King 需从 A/B/C/D 四个修复选项中选择（详见该 MD）。
+- **今日未重跑 face PR baseline**（未产生 `2c-tune-recognition-pr-2026-04-29.json`）。原因：自 `#2c-tune` (`e8c3358`) 后 server inference 路径零漂移，今日 HEAD 在之后只多了 3 个不影响 face PR 的 commit：`f16da9b` (YOLOv8 decoder shape)、`23126a4` (worker tool class collapse + model_versions)、`e042e99` (eval_pr.py env override)。`2c-tune-recognition-pr.json` 仍是当前真值。如果未来动了 `server/src/inference/{recall,scrfd,preprocess}.rs` 或 `models/`，重跑才有意义。
