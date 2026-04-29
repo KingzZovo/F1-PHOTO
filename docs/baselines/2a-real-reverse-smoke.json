@@ -1,6 +1,6 @@
 {
   "milestone": "#2a-real-reverse",
-  "summary": "#2a -> #2b end-to-end recall on real ID photos: re-upload the same 119 real CNNC employee ID photos (already ingested via Path A as owner_type='person') into a SECOND project as owner_type='wo_raw' (no owner_id, no employee_no) and verify that the production recognition path matches every photo back to its corresponding persons row via the cross-project identity_embeddings gallery. End-to-end EID truth-table check: 119/119 OK, 0 mismatch.",
+  "summary": "#2a -> #2b end-to-end recall on real ID photos: re-upload the same 119 real client employee ID photos (already ingested via Path A as owner_type='person') into a SECOND project as owner_type='wo_raw' (no owner_id, no employee_no) and verify that the production recognition path matches every photo back to its corresponding persons row via the cross-project identity_embeddings gallery. End-to-end EID truth-table check: 119/119 OK, 0 mismatch.",
   "date": "2026-04-28",
   "feat_commit": "PENDING",
   "docs_commit": "PENDING",
@@ -20,7 +20,7 @@
     "photos_dir": "/tmp/id_photos",
     "photo_count": 119,
     "total_bytes": 95047503,
-    "source": "same 119 real CNNC ID photos used by #2a-real Path A (Asian faces, Chinese filenames)"
+    "source": "same 119 real client ID photos used by #2a-real Path A (Asian faces, Chinese filenames)"
   },
   "parse_stats": {
     "total_files": 119,

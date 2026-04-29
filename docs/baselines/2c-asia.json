@@ -139,7 +139,7 @@
   "docs_commit": "PENDING",
   "feat_commit": "PENDING",
   "meta": {
-    "cohort_description": "real CNNC employee ID photos (Asian-face passport-style, frontal, well-lit, single subject)",
+    "cohort_description": "real client employee ID photos (Asian-face passport-style, frontal, well-lit, single subject)",
     "detector": "SCRFD-10G ONNX (ORT CPU)",
     "dst_project_code": "id-photo-2a-reverse",
     "dst_project_id": "f54d2a48-537c-4ab3-8f5b-826662465410",
@@ -156,7 +156,7 @@
     }
   },
   "milestone": "#2c-asia",
-  "milestone_label": "Asian face detection-rate / bbox / score baseline on real CNNC employee ID photos",
+  "milestone_label": "Asian face detection-rate / bbox / score baseline on real client employee ID photos",
   "next_steps": [
     {
       "gating_milestone": "#2c-asia-wild (queued; no real photo source yet)",

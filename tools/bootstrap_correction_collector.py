@@ -14,7 +14,7 @@ The persons-bootstrap path (`owner_type=person`) does NOT run YOLOv8, so the
 collector is intentionally pointed at the wo_raw / reverse-smoke project where
 tool detections actually exist (#2a-real-reverse / #2c-asia evidence: 214
 unmatched tool detections at score median ~0.89 / max ~0.95 on the 119-photo
-CNNC ID-photo cohort).
+client ID-photo cohort).
 
 This tool is read-only: it talks to bundled-pg via `psql` and writes only the
 output files. It does not mutate detections, recognition_items, or any other

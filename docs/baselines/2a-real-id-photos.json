@@ -1,6 +1,6 @@
 {
   "milestone": "#2a-real",
-  "summary": "#2a person-bootstrap path A end-to-end run on 119 real CNNC ID photos (Asian faces, Chinese filenames). Validates the cold-start gallery seed at production scale and supplies the first real-world detection-rate baseline (an Asian-face counterpart to the #2 / #2c synthetic-fixture baselines, partially de-risking #2c-asia).",
+  "summary": "#2a person-bootstrap path A end-to-end run on 119 real client ID photos (Asian faces, Chinese filenames). Validates the cold-start gallery seed at production scale and supplies the first real-world detection-rate baseline (an Asian-face counterpart to the #2 / #2c synthetic-fixture baselines, partially de-risking #2c-asia).",
   "run": {
     "date_local": "2026-04-28",
     "timezone": "Asia/Shanghai",
@@ -17,7 +17,7 @@
     }
   },
   "inputs": {
-    "source": "CNNC (China National Nuclear Corp.) employee uniform ID photos, Asian, supplied as id_photos.tar.zip",
+    "source": "client employee uniform ID photos, Asian, supplied as id_photos.tar.zip",
     "archive_path": "/tmp/id_photos_archive/id_photos.tar.zip",
     "archive_bytes": 92292885,
     "archive_format_detected": "zip (magic 50 4b 03 04; suffix .tar.zip is misleading)",
@@ -80,7 +80,7 @@
       },
       "#2a_real_id_photos": {
         "scrfd_rate": 1.0,
-        "context": "119 real CNNC ID photos (controlled lighting, frontal pose, ~94 % portrait crops, JPEG/PNG natively); SCRFD has no detection failures on this domain",
+        "context": "119 real client ID photos (controlled lighting, frontal pose, ~94 % portrait crops, JPEG/PNG natively); SCRFD has no detection failures on this domain",
         "baseline_file": "docs/baselines/2a-real-id-photos.json"
       }
     }
