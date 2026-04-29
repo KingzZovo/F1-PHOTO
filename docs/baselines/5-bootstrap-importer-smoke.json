@@ -1,0 +1,119 @@
+{
+  "created_at": "2026-04-29T02:52:36Z",
+  "docs_commit": "PENDING",
+  "feat_commit": "PENDING",
+  "milestone": "#5-bootstrap-importer",
+  "milestone_label": "#5-bootstrap correction-loop importer tool + dry-run smoke covering all 5 row categories and pre-flight error paths",
+  "next_steps": [
+    "Reviewer fills corrected_label / corrected_owner_type / corrected_owner_id / suppress / reviewer / reviewed_at / notes in a collector CSV",
+    "Run importer in dry-run, inspect the audit JSON",
+    "Run importer with --apply; manual_corrected rows accumulate in recognition_items",
+    "When SELECT count(*) FROM recognition_items WHERE status = 'manual_corrected' >= 50, #5-bootstrap retrain becomes runnable"
+  ],
+  "non_goals": [
+    "Do not retrain (#5-bootstrap retrain still gated by >=50 manual_corrected rows; this tool feeds that gate, it does not trigger it)",
+    "Do not delete recognition_items",
+    "Do not write to v_training_corrections directly (it is a derived view)",
+    "Do not mutate persons/tools/devices ownership tables",
+    "Do not add server endpoints; reuses PATCH /api/projects/:pid/recognition_items/:id/correct"
+  ],
+  "smoke_runs": [
+    {
+      "csv": "/tmp/corrections-2026-04-29-smoke.csv",
+      "csv_rows": 214,
+      "expected_by_category": {
+        "unreviewed": 214
+      },
+      "mode": "dry-run",
+      "name": "full-collector-csv",
+      "observed_by_category": {
+        "unreviewed": 214
+      },
+      "report_path": "/tmp/corrections-import-smoke-full.json",
+      "verdict": "PASS",
+      "verdict_explanation": "No reviewer columns are filled in the collector smoke output yet, so importer correctly classifies all 214 rows as unreviewed and issues zero PATCHes."
+    },
+    {
+      "covered_paths": [
+        "unreviewed (skipped silently)",
+        "suppress (audit-only, no DB mutation)",
+        "set valid -- recognition_item_id lookup HIT, owner present (person 383b613a-c5af-4033-9e44-e08c71bb1144)",
+        "set bad owner -- lookup HIT, owner absent (person 00000000-0000-0000-0000-000000000000) -- pre-flight error",
+        "set bad project -- lookup MISS (detection 9999999 / project 00000000-0000-0000-0000-000000000000) -- pre-flight error",
+        "invalid -- half-filled owner_type without owner_id",
+        "clear -- explicit on-the-spot lookup, no error"
+      ],
+      "csv": "/tmp/corrections-importer-mini.csv",
+      "csv_rows": 7,
+      "expected_by_category": {
+        "clear": 1,
+        "invalid": 1,
+        "set": 3,
+        "suppress": 1,
+        "unreviewed": 1
+      },
+      "mode": "dry-run",
+      "name": "mini-categories-coverage",
+      "observed_by_category": {
+        "clear": 1,
+        "invalid": 1,
+        "set": 3,
+        "suppress": 1,
+        "unreviewed": 1
+      },
+      "pre_flight_errors_expected": 2,
+      "pre_flight_errors_observed": 2,
+      "report_path": "/tmp/corrections-importer-mini.json",
+      "resolved_recognition_item_ids": {
+        "L4_valid_set": "38c5c267-c6c1-4519-96ec-e4853524c554",
+        "L8_clear": "38c5c267-c6c1-4519-96ec-e4853524c554"
+      },
+      "verdict": "PASS",
+      "verdict_explanation": "All 5 categories are reached; both pre-flight error paths (owner-absent, lookup-miss) trigger correctly without issuing PATCHes; valid set+clear rows resolve recognition_items.id via psql and would PATCH cleanly under --apply."
+    }
+  ],
+  "status": "done",
+  "status_note": "Read-only-by-default Python CLI (tools/bootstrap_correction_importer.py). Reads a bootstrap_correction_collector.py CSV after a human has filled the reviewer columns, classifies each row into unreviewed | suppress | set | clear | invalid, resolves recognition_items.id from (project_id, detection_id) via psql, pre-flight-validates owner existence (deleted_at IS NULL), and either prints a dry-run preview (default) or PATCHes /api/projects/<pid>/recognition_items/<id>/correct (--apply). Closes the second half of the >=50-correction gate that #5-bootstrap (retrain) is queued behind. Default mode mutates nothing.",
+  "tool": {
+    "bytes": 20701,
+    "cli_arguments": [
+      "--csv",
+      "--report-path",
+      "--apply",
+      "--summary-only",
+      "--limit",
+      "--base-url",
+      "--admin-user",
+      "--admin-pwd",
+      "--psql-bin",
+      "--pg-host",
+      "--pg-port",
+      "--pg-user",
+      "--pg-pwd",
+      "--pg-db"
+    ],
+    "language": "python3",
+    "mutates_default": false,
+    "path": "tools/bootstrap_correction_importer.py",
+    "preflight_checks": [
+      "recognition_items.id lookup by (project_id, detection_id) -- batched single VALUES JOIN",
+      "owner existence in persons|tools|devices with deleted_at IS NULL"
+    ],
+    "requires_apply_flag_to_mutate": true,
+    "row_categories": {
+      "clear": "both fields empty AND reviewer set; PATCH with {} NULLs the corrected_* columns and reverts status",
+      "invalid": "half-filled (one of owner_type/owner_id without the other, or owner_type not in person|tool|device); counted in audit, never sent",
+      "set": "corrected_owner_type + corrected_owner_id both populated; PATCH with {owner_type,owner_id} sets corrected_owner_* and flips status to manual_corrected",
+      "suppress": "suppress truthy; recorded in audit only (no DB mutation, endpoint has no suppress path)",
+      "unreviewed": "all 7 reviewer fields blank; skipped silently"
+    },
+    "sha256_short": "dd0c3b052480e3f1"
+  },
+  "validation": {
+    "apply_smoke_run_against_live_server": false,
+    "apply_smoke_run_against_live_server_reason": "Avoid mutating live recognition_items state in the #2-family Path B truth-table; --apply path will be exercised by the reviewer when ingesting filled CSVs. Pre-flight + payload assembly are fully covered above.",
+    "dry_run_default": true,
+    "dry_run_total_patches_issued": 0,
+    "tool_syntax_ok": true
+  }
+}
