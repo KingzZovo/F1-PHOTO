@@ -6,6 +6,8 @@
 
 F1-Photo 是一个本地化、离线、单机部署的工单照片归档系统：Rust + PostgreSQL + ONNX (CPU)。
 
+- 当前推进以 `docs/v1.4.x-v1.5.0-roadmap.md` 为单一事实源；所有 milestone 以 baseline JSON/MD + 可复现脚本为准。
+
 ## 关键决策（不要随意改）
 
 - DB 固定为 **PostgreSQL 16 + pgvector**。不引入 Redis / FAISS / Milvus。队列也走 PG（sqlx 队列表或 pgmq）。
