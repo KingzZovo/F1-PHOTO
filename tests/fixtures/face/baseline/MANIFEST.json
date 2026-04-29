@@ -8,19 +8,10 @@
     "EASTERN_DISTRACTOR": 1,
     "MIN_LFW_COUNT": 3,
     "MAX_LFW_COUNT": 10,
-    "upscale_to": null,
-    "upscale_resampler": null,
     "eastern_upscale_disabled_at": "2026-04-29 PM-A",
-    "eastern_pad_to": [
-      320,
-      320
-    ],
-    "eastern_pad_fill": [
-      128,
-      128,
-      128
-    ],
-    "eastern_padded_at": "2026-04-29 PM-A.2"
+    "eastern_native_at": "2026-04-29 PM-A.3",
+    "upscale_to": null,
+    "upscale_resampler": null
   },
   "sources": {
     "western": {
@@ -31,12 +22,13 @@
       "native_size": "250x250 RGB"
     },
     "eastern": {
-      "name": "jack139/face-dataset/train2 (Asian A subset, 50 IDs)",
+      "name": "jack139/face-dataset/test3 (anonymous Asian celeb subset, 51 IDs)",
       "upstream": "https://github.com/jack139/face-dataset",
+      "upstream_path": "test3",
       "fetched_via": "GitHub contents API + raw.githubusercontent.com",
-      "license": "Repo is MIT-licensed; underlying portrait images are filtered crops produced by jack139's gen_data.py from public Asian-celeb sources. Treat as research-only.",
-      "native_size": "~140x147 RGB (dlib face crops)",
-      "note": "Native ~131-159x125-154 RGB dlib crops, gray-padded to 320x320 so the face occupies ~45% of the frame (similar to LFW funneled). Pre-PM-A: was bicubic-upscaled to 256x256 (PIL.BICUBIC) -> double-interp killed face_det_rate. PM-A: stored native -> still face_det_rate=0 because dlib-crops have ~95% face fill, no context. PM-A.2 (this): pad to 320x320 gray-fill so SCRFD sees face-with-context."
+      "license": "Repo MIT-licensed; underlying portrait images are research-only.",
+      "native_size": "250x250 RGB (LFW-funneled-equivalent dimension)",
+      "note": "PM-A.3 / Path C: dropped 320x320 gray-pad hack. test3 is native 250x250 funneled-style with face-with-context, identical dimension and similar median bytes (~9.5KiB) to LFW funneled western source. No padding, no upscale. SCRFD detects natively."
     }
   },
   "future_extensions": [
@@ -96,28 +88,28 @@
       "employee_no": "E-2C-W-amelia_vega"
     },
     {
-      "slug": "caihancen",
-      "display": "caihancen",
+      "slug": "t3_3131124",
+      "display": "jack139/test3/3131124",
       "bucket": "eastern",
-      "employee_no": "E-2C-E-caihancen"
+      "employee_no": "E-2C-E-t3_3131124"
     },
     {
-      "slug": "baijingting",
-      "display": "baijingting",
+      "slug": "t3_3131306",
+      "display": "jack139/test3/3131306",
       "bucket": "eastern",
-      "employee_no": "E-2C-E-baijingting"
+      "employee_no": "E-2C-E-t3_3131306"
     },
     {
-      "slug": "aidai",
-      "display": "aidai",
+      "slug": "t3_3132111",
+      "display": "jack139/test3/3132111",
       "bucket": "eastern",
-      "employee_no": "E-2C-E-aidai"
+      "employee_no": "E-2C-E-t3_3132111"
     },
     {
-      "slug": "baobeier",
-      "display": "baobeier",
+      "slug": "t3_3134589",
+      "display": "jack139/test3/3134589",
       "bucket": "eastern",
-      "employee_no": "E-2C-E-baobeier"
+      "employee_no": "E-2C-E-t3_3134589"
     }
   ],
   "distractor_roster": [
@@ -132,8 +124,8 @@
       "bucket": "western"
     },
     {
-      "slug": "caiyilin",
-      "display": "caiyilin",
+      "slug": "t3_3135437",
+      "display": "jack139/test3/3135437",
       "bucket": "eastern"
     }
   ],
@@ -451,270 +443,6 @@
       "bytes": 20595
     },
     {
-      "path": "tests/fixtures/face/baseline/eastern_caihancen/seed_01.jpg",
-      "role": "seed",
-      "identity_slug": "caihancen",
-      "identity_display": "caihancen",
-      "bucket": "eastern",
-      "enrolled": true,
-      "upscaled_from": null,
-      "upscaled_to": null,
-      "source_origin": "jack139/face-dataset/train2",
-      "sha256": "25dd09b4d5e494ab3466acd1a50da94b52db717d6e1a69dedbb7998e3e067928",
-      "bytes": 6700,
-      "native_size": [
-        145,
-        145
-      ],
-      "src_filename": "1_0_caihancen_0031.jpg",
-      "padded_to": [
-        320,
-        320
-      ]
-    },
-    {
-      "path": "tests/fixtures/face/baseline/eastern_caihancen/query_01.jpg",
-      "role": "query",
-      "identity_slug": "caihancen",
-      "identity_display": "caihancen",
-      "bucket": "eastern",
-      "enrolled": true,
-      "upscaled_from": null,
-      "upscaled_to": null,
-      "source_origin": "jack139/face-dataset/train2",
-      "sha256": "bf0847cbdddee6329d0c0932b9a74f4493a4c3f7df5a481e8612899034e5256c",
-      "bytes": 8168,
-      "native_size": [
-        159,
-        136
-      ],
-      "src_filename": "1_0_caihancen_0051.jpg",
-      "padded_to": [
-        320,
-        320
-      ]
-    },
-    {
-      "path": "tests/fixtures/face/baseline/eastern_caihancen/query_02.jpg",
-      "role": "query",
-      "identity_slug": "caihancen",
-      "identity_display": "caihancen",
-      "bucket": "eastern",
-      "enrolled": true,
-      "upscaled_from": null,
-      "upscaled_to": null,
-      "source_origin": "jack139/face-dataset/train2",
-      "sha256": "6941720e77b6beebcbc07ba912d8f7c4679443b0f1c3f8d4f451e898e7600d18",
-      "bytes": 9033,
-      "native_size": [
-        155,
-        135
-      ],
-      "src_filename": "1_0_caihancen_0052.jpg",
-      "padded_to": [
-        320,
-        320
-      ]
-    },
-    {
-      "path": "tests/fixtures/face/baseline/eastern_baijingting/seed_01.jpg",
-      "role": "seed",
-      "identity_slug": "baijingting",
-      "identity_display": "baijingting",
-      "bucket": "eastern",
-      "enrolled": true,
-      "upscaled_from": null,
-      "upscaled_to": null,
-      "source_origin": "jack139/face-dataset/train2",
-      "sha256": "0123c779fecebe0cacc65b92d0a090ec2caf78d6b2fc5776c2877e3159538bc3",
-      "bytes": 7421,
-      "native_size": [
-        155,
-        147
-      ],
-      "src_filename": "1_0_baijingting_0009.jpg",
-      "padded_to": [
-        320,
-        320
-      ]
-    },
-    {
-      "path": "tests/fixtures/face/baseline/eastern_baijingting/query_01.jpg",
-      "role": "query",
-      "identity_slug": "baijingting",
-      "identity_display": "baijingting",
-      "bucket": "eastern",
-      "enrolled": true,
-      "upscaled_from": null,
-      "upscaled_to": null,
-      "source_origin": "jack139/face-dataset/train2",
-      "sha256": "8d0bada2fcf2ef4f7c8860c0455c5c34812439367451d4a15f4c68498e2f0be6",
-      "bytes": 7675,
-      "native_size": [
-        146,
-        151
-      ],
-      "src_filename": "1_0_baijingting_0022.jpg",
-      "padded_to": [
-        320,
-        320
-      ]
-    },
-    {
-      "path": "tests/fixtures/face/baseline/eastern_baijingting/query_02.jpg",
-      "role": "query",
-      "identity_slug": "baijingting",
-      "identity_display": "baijingting",
-      "bucket": "eastern",
-      "enrolled": true,
-      "upscaled_from": null,
-      "upscaled_to": null,
-      "source_origin": "jack139/face-dataset/train2",
-      "sha256": "4a178b58adb4f2a0ee034b6920cb25a92af9acb3747d5a7c39adb17b56aaa288",
-      "bytes": 7670,
-      "native_size": [
-        153,
-        134
-      ],
-      "src_filename": "1_0_baijingting_0023.jpg",
-      "padded_to": [
-        320,
-        320
-      ]
-    },
-    {
-      "path": "tests/fixtures/face/baseline/eastern_aidai/seed_01.jpg",
-      "role": "seed",
-      "identity_slug": "aidai",
-      "identity_display": "aidai",
-      "bucket": "eastern",
-      "enrolled": true,
-      "upscaled_from": null,
-      "upscaled_to": null,
-      "source_origin": "jack139/face-dataset/train2",
-      "sha256": "9bc769af2a5e362d155248d8656bed22c4f5d2a9ef2b12b18e5dd914f89ff18d",
-      "bytes": 7787,
-      "native_size": [
-        131,
-        151
-      ],
-      "src_filename": "1_0_aidai_0021.jpg",
-      "padded_to": [
-        320,
-        320
-      ]
-    },
-    {
-      "path": "tests/fixtures/face/baseline/eastern_aidai/query_01.jpg",
-      "role": "query",
-      "identity_slug": "aidai",
-      "identity_display": "aidai",
-      "bucket": "eastern",
-      "enrolled": true,
-      "upscaled_from": null,
-      "upscaled_to": null,
-      "source_origin": "jack139/face-dataset/train2",
-      "sha256": "6665f187312de8d7577fac3b761531896697ff900288d60869448b722fa88450",
-      "bytes": 7410,
-      "native_size": [
-        138,
-        135
-      ],
-      "src_filename": "1_0_aidai_0033.jpg",
-      "padded_to": [
-        320,
-        320
-      ]
-    },
-    {
-      "path": "tests/fixtures/face/baseline/eastern_aidai/query_02.jpg",
-      "role": "query",
-      "identity_slug": "aidai",
-      "identity_display": "aidai",
-      "bucket": "eastern",
-      "enrolled": true,
-      "upscaled_from": null,
-      "upscaled_to": null,
-      "source_origin": "jack139/face-dataset/train2",
-      "sha256": "b18572f202fb3f785e5ecad0379e3432dad26ae09bf4eaa933a8a467b9c37d37",
-      "bytes": 6384,
-      "native_size": [
-        143,
-        125
-      ],
-      "src_filename": "1_0_aidai_0034.jpg",
-      "padded_to": [
-        320,
-        320
-      ]
-    },
-    {
-      "path": "tests/fixtures/face/baseline/eastern_baobeier/seed_01.jpg",
-      "role": "seed",
-      "identity_slug": "baobeier",
-      "identity_display": "baobeier",
-      "bucket": "eastern",
-      "enrolled": true,
-      "upscaled_from": null,
-      "upscaled_to": null,
-      "source_origin": "jack139/face-dataset/train2",
-      "sha256": "10183cbe65fd69a9ab77dfe90004388a18d5c35c01f8b70ff75d2e77e792ef55",
-      "bytes": 7141,
-      "native_size": [
-        140,
-        132
-      ],
-      "src_filename": "1_0_baobeier_0029.jpg",
-      "padded_to": [
-        320,
-        320
-      ]
-    },
-    {
-      "path": "tests/fixtures/face/baseline/eastern_baobeier/query_01.jpg",
-      "role": "query",
-      "identity_slug": "baobeier",
-      "identity_display": "baobeier",
-      "bucket": "eastern",
-      "enrolled": true,
-      "upscaled_from": null,
-      "upscaled_to": null,
-      "source_origin": "jack139/face-dataset/train2",
-      "sha256": "a20ab0b4d3daf3ec8ee2259906ac1a6d8d593f8f7f7f81f25e802931efb6d6d9",
-      "bytes": 7035,
-      "native_size": [
-        148,
-        143
-      ],
-      "src_filename": "1_0_baobeier_0031.jpg",
-      "padded_to": [
-        320,
-        320
-      ]
-    },
-    {
-      "path": "tests/fixtures/face/baseline/eastern_baobeier/query_02.jpg",
-      "role": "query",
-      "identity_slug": "baobeier",
-      "identity_display": "baobeier",
-      "bucket": "eastern",
-      "enrolled": true,
-      "upscaled_from": null,
-      "upscaled_to": null,
-      "source_origin": "jack139/face-dataset/train2",
-      "sha256": "4da62f6e9fda85b451e02285713b30d3f42e4b5e0f7725e81787649baaf7a251",
-      "bytes": 7351,
-      "native_size": [
-        146,
-        154
-      ],
-      "src_filename": "1_0_baobeier_0035.jpg",
-      "padded_to": [
-        320,
-        320
-      ]
-    },
-    {
       "path": "tests/fixtures/face/baseline/_distractor_western_thomas_rupprath/query_01.jpg",
       "role": "query",
       "identity_slug": "thomas_rupprath",
@@ -767,48 +495,256 @@
       "bytes": 19436
     },
     {
-      "path": "tests/fixtures/face/baseline/_distractor_eastern_caiyilin/query_01.jpg",
-      "role": "query",
-      "identity_slug": "caiyilin",
-      "identity_display": "caiyilin",
+      "path": "tests/fixtures/face/baseline/eastern_t3_3131124/seed_01.jpg",
+      "role": "seed",
+      "identity_slug": "t3_3131124",
+      "identity_display": "jack139/test3/3131124",
       "bucket": "eastern",
-      "enrolled": false,
+      "enrolled": true,
       "upscaled_from": null,
       "upscaled_to": null,
-      "source_origin": "jack139/face-dataset/train2",
-      "sha256": "5864a02a21218e4b276b041d956050f73a2aba1853934eb49636ea62c62a75bb",
-      "bytes": 6734,
+      "source_origin": "jack139/face-dataset/test3",
+      "sha256": "cd8a2b1c730eb7583461b16fb159c34215d062298519f77aee50f792f722fecb",
+      "bytes": 7754,
       "native_size": [
-        127,
-        137
+        250,
+        250
       ],
-      "src_filename": "0_0_caiyilin_0147.jpg",
-      "padded_to": [
-        320,
-        320
-      ]
+      "src_filename": "012.jpg"
     },
     {
-      "path": "tests/fixtures/face/baseline/_distractor_eastern_caiyilin/query_02.jpg",
+      "path": "tests/fixtures/face/baseline/eastern_t3_3131124/query_01.jpg",
       "role": "query",
-      "identity_slug": "caiyilin",
-      "identity_display": "caiyilin",
+      "identity_slug": "t3_3131124",
+      "identity_display": "jack139/test3/3131124",
+      "bucket": "eastern",
+      "enrolled": true,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "jack139/face-dataset/test3",
+      "sha256": "fdaf99b04bfda27a7b7ce19e6590433f3b6981e15c419e009fc59a33ad79d0b4",
+      "bytes": 9628,
+      "native_size": [
+        250,
+        250
+      ],
+      "src_filename": "013.jpg"
+    },
+    {
+      "path": "tests/fixtures/face/baseline/eastern_t3_3131124/query_02.jpg",
+      "role": "query",
+      "identity_slug": "t3_3131124",
+      "identity_display": "jack139/test3/3131124",
+      "bucket": "eastern",
+      "enrolled": true,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "jack139/face-dataset/test3",
+      "sha256": "a59f9a12b99f80505dd243a29566d583fda7c4a91a738ba7066c44d6596f5a57",
+      "bytes": 10439,
+      "native_size": [
+        250,
+        250
+      ],
+      "src_filename": "014.jpg"
+    },
+    {
+      "path": "tests/fixtures/face/baseline/eastern_t3_3131306/seed_01.jpg",
+      "role": "seed",
+      "identity_slug": "t3_3131306",
+      "identity_display": "jack139/test3/3131306",
+      "bucket": "eastern",
+      "enrolled": true,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "jack139/face-dataset/test3",
+      "sha256": "823ecf74aa9a0d73e10c115e4268c7ef96f6277d05f755561073e3f985140a30",
+      "bytes": 14391,
+      "native_size": [
+        250,
+        250
+      ],
+      "src_filename": "011.jpg"
+    },
+    {
+      "path": "tests/fixtures/face/baseline/eastern_t3_3131306/query_01.jpg",
+      "role": "query",
+      "identity_slug": "t3_3131306",
+      "identity_display": "jack139/test3/3131306",
+      "bucket": "eastern",
+      "enrolled": true,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "jack139/face-dataset/test3",
+      "sha256": "e44d0cae7038622b7d336d6c3c6b59f37434b1d16fd326314a5bcdb0c7f53ccf",
+      "bytes": 10389,
+      "native_size": [
+        250,
+        250
+      ],
+      "src_filename": "012.jpg"
+    },
+    {
+      "path": "tests/fixtures/face/baseline/eastern_t3_3131306/query_02.jpg",
+      "role": "query",
+      "identity_slug": "t3_3131306",
+      "identity_display": "jack139/test3/3131306",
+      "bucket": "eastern",
+      "enrolled": true,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "jack139/face-dataset/test3",
+      "sha256": "5873d781df194a84e10b4e691d0a896bde69de54a711dd5779fe069d2ef78d06",
+      "bytes": 7446,
+      "native_size": [
+        250,
+        250
+      ],
+      "src_filename": "013.jpg"
+    },
+    {
+      "path": "tests/fixtures/face/baseline/eastern_t3_3132111/seed_01.jpg",
+      "role": "seed",
+      "identity_slug": "t3_3132111",
+      "identity_display": "jack139/test3/3132111",
+      "bucket": "eastern",
+      "enrolled": true,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "jack139/face-dataset/test3",
+      "sha256": "cda18d02b2e6fe3f7147273ed80cc9b78297a3b31626b1a5909e4f59847b5ea8",
+      "bytes": 8887,
+      "native_size": [
+        250,
+        250
+      ],
+      "src_filename": "012.jpg"
+    },
+    {
+      "path": "tests/fixtures/face/baseline/eastern_t3_3132111/query_01.jpg",
+      "role": "query",
+      "identity_slug": "t3_3132111",
+      "identity_display": "jack139/test3/3132111",
+      "bucket": "eastern",
+      "enrolled": true,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "jack139/face-dataset/test3",
+      "sha256": "c614f183438b2f40381321e89815f2cd6844a29e811ce758c457389ed30fc94d",
+      "bytes": 8251,
+      "native_size": [
+        250,
+        250
+      ],
+      "src_filename": "013.jpg"
+    },
+    {
+      "path": "tests/fixtures/face/baseline/eastern_t3_3132111/query_02.jpg",
+      "role": "query",
+      "identity_slug": "t3_3132111",
+      "identity_display": "jack139/test3/3132111",
+      "bucket": "eastern",
+      "enrolled": true,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "jack139/face-dataset/test3",
+      "sha256": "9e94983ef03173f957ec420c0040a6c6f1fc35208768d541a8110763878d4e8e",
+      "bytes": 7210,
+      "native_size": [
+        250,
+        250
+      ],
+      "src_filename": "014.jpg"
+    },
+    {
+      "path": "tests/fixtures/face/baseline/eastern_t3_3134589/seed_01.jpg",
+      "role": "seed",
+      "identity_slug": "t3_3134589",
+      "identity_display": "jack139/test3/3134589",
+      "bucket": "eastern",
+      "enrolled": true,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "jack139/face-dataset/test3",
+      "sha256": "d00ab5d500255b42c011ac14e93a0b0d00af1fd3f42d26f3d71c9044029cd1e7",
+      "bytes": 9604,
+      "native_size": [
+        250,
+        250
+      ],
+      "src_filename": "014.jpg"
+    },
+    {
+      "path": "tests/fixtures/face/baseline/eastern_t3_3134589/query_01.jpg",
+      "role": "query",
+      "identity_slug": "t3_3134589",
+      "identity_display": "jack139/test3/3134589",
+      "bucket": "eastern",
+      "enrolled": true,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "jack139/face-dataset/test3",
+      "sha256": "431286dc889a93ac5eea2a8787044fb8207b286abd5db9a1b07cc2633dc5adbe",
+      "bytes": 8268,
+      "native_size": [
+        250,
+        250
+      ],
+      "src_filename": "015.jpg"
+    },
+    {
+      "path": "tests/fixtures/face/baseline/eastern_t3_3134589/query_02.jpg",
+      "role": "query",
+      "identity_slug": "t3_3134589",
+      "identity_display": "jack139/test3/3134589",
+      "bucket": "eastern",
+      "enrolled": true,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "jack139/face-dataset/test3",
+      "sha256": "b37a5a5144b911464a67fb63e7e874f37281fc9cfffaeb83c8e8e14415ed66fc",
+      "bytes": 10878,
+      "native_size": [
+        250,
+        250
+      ],
+      "src_filename": "016.jpg"
+    },
+    {
+      "path": "tests/fixtures/face/baseline/_distractor_eastern_t3_3135437/query_01.jpg",
+      "role": "query",
+      "identity_slug": "t3_3135437",
+      "identity_display": "jack139/test3/3135437",
       "bucket": "eastern",
       "enrolled": false,
       "upscaled_from": null,
       "upscaled_to": null,
-      "source_origin": "jack139/face-dataset/train2",
-      "sha256": "aad043b69b34b5427da45f6adc9b676808a7a3b03de1df37e99f8e46aca3ce8a",
-      "bytes": 7806,
+      "source_origin": "jack139/face-dataset/test3",
+      "sha256": "698f5e8f501027dea5f663ca6391e206cb5c385fadedc8782f52bef9e93c69fd",
+      "bytes": 8910,
       "native_size": [
-        152,
-        136
+        250,
+        250
       ],
-      "src_filename": "1_0_caiyilin_0002.jpg",
-      "padded_to": [
-        320,
-        320
-      ]
+      "src_filename": "014.jpg"
+    },
+    {
+      "path": "tests/fixtures/face/baseline/_distractor_eastern_t3_3135437/query_02.jpg",
+      "role": "query",
+      "identity_slug": "t3_3135437",
+      "identity_display": "jack139/test3/3135437",
+      "bucket": "eastern",
+      "enrolled": false,
+      "upscaled_from": null,
+      "upscaled_to": null,
+      "source_origin": "jack139/face-dataset/test3",
+      "sha256": "8bcc56b4fb43101e53cdadbda4559e8b0b6bc6400a72f86d2b710d382b7cc0bc",
+      "bytes": 5197,
+      "native_size": [
+        250,
+        250
+      ],
+      "src_filename": "015.jpg"
     }
   ]
 }

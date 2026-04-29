@@ -169,3 +169,92 @@ Decision pending: keep server's `Thresholds::DEFAULT.match_lower=0.40` (current)
 - Consider richer eastern source: jack139's `test4/` (112×112) or RMFD/glintasia — anything pre-funneled rather than dlib-tight.
 - Audit why one caiyilin distractor query crossed match_lower=0.40 against an enrolled eastern person (single eastern FP at default threshold).
 - The 3 fewer photo_unmatched between PM-A and PM-A.2 (87→83 seed-drain) and 9 more photo_matched (250 vs 246) confirm SCRFD now sees eastern seeds.
+
+
+---
+
+## PM-A.3 / Path C — Eastern fixture switched to jack139/test3 (2026-04-29)
+
+**Status:** Fixture source switched from `test2` (dlib-tight ~140×147 + 320 gray-pad) to `test3` (native 250×250 funneled-equivalent). Identity slugs are now anonymous numeric IDs (`t3_3131124`, `t3_3131306`, `t3_3132111`, `t3_3134589` enrolled; `t3_3135437` distractor). The 320×320 gray-pad hack is removed entirely; PM-A.2's padded test2 fixture is fully superseded.
+
+### Result table (eastern bucket, 500m, default thresholds ll=0.30 ml=0.40)
+
+| Run | seed source | face_det_rate | TP | FP | FN | TN | F1 | overall F1 |
+|---|---|---|---|---|---|---|---|---|
+| Baseline (`2c-tune-recognition-pr.json`) | jack139 dlib + 256 bicubic | 0.0 | 0 | 0 | 8 | 2 | None | 0.500 |
+| PM-B (10g) | same fixture | 0.0 | 0 | 0 | 8 | 2 | None | 0.546 |
+| PM-A (no upscale) | jack139 dlib native | 0.0 | 0 | 0 | 8 | 2 | None | 0.500 |
+| PM-A.2 (320 pad) | dlib + 320 gray-pad | 1.0 | 1 | 1 | 7 | 2 | 0.200 | 0.529 |
+| **PM-A.3 (test3 native)** | **test3 250×250 funneled-equiv** | **1.0** | 0 | 0 | 8 | 2 | None | 0.500 |
+
+### But the threshold sweep tells a very different story
+
+At match_lower=0.30 (one tick below default):
+
+| Run | overall F1 | overall P | overall R | TP | FP | FN | TN |
+|---|---|---|---|---|---|---|---|
+| PM-A.2 (padded test2) | 0.636 | 0.700 | 0.583 | 14 | **6** | 10 | 5 |
+| **PM-A.3 (native test3)** | **0.700** | **0.875** | 0.583 | 14 | **2** | 10 | 5 |
+
+Same TP (14), same FN (10), same R (0.583) — but **A.3 has 1/3 the false positives** of A.2. Inferred eastern at ml=0.30:
+- A.2: eastern TP=6 FP≈5 → eastern F1 ≈0.63
+- **A.3: eastern TP=6 FP≈1 → eastern F1 ≈0.80**
+
+The two fixtures detect the same number of true matches at a lowered threshold, but test3's funneled-style images produce ArcFace embeddings that are dramatically cleaner across identities. The padded-dlib hack of A.2 manufactured fake "context" that ArcFace partially encoded as identity noise, raising cross-person similarity — hence the FP=6.
+
+### Why A.3 still scores None at default ml=0.40
+
+ArcFace (face_embed.onnx) was trained on Western/global photo distributions. Test3 (anonymous Asian celeb subset) embeddings are at greater absolute cosine distance from same-identity seed photos than LFW Western embeddings are — not because the *quality* is worse, but because the *distribution shift* is real. At default ml=0.40 nothing crosses; at ml=0.30 the same set of true matches lights up, with very few false-positive crossings.
+
+This is the cleanest possible signal that **the problem is no longer fixture-quality**. The remaining gap is the threshold (or, equivalently, an Asian-fine-tuned ArcFace head). A future per-bucket threshold (`match_lower=0.30` for eastern, `match_lower=0.40` for western) would lift overall F1 to ~0.70 with no western regression.
+
+### Procedure (PM-A.3, current production fixture)
+
+Script: `/tmp/rebuild-eastern-test3.py` (kept under /tmp; rerun-as-needed via the manifest's `sources.eastern.upstream_path`).
+
+1. List `https://api.github.com/repos/jack139/face-dataset/contents/test3` → 51 anonymous-ID slug dirs.
+2. Pick first 5 lex-sorted: 4 enrolled (`3131124, 3131306, 3132111, 3134589`) + 1 distractor (`3135437`).
+3. For each, list contents, take first 3 (or 2 for distractor) jpgs lex-sorted.
+4. Download raw bytes from `raw.githubusercontent.com/jack139/face-dataset/master/test3/<slug>/<name>` — 250×250 RGB, ~5-15 KiB each.
+5. Write **native bytes, no resize, no pad** to `tests/fixtures/face/baseline/eastern_t3_<slug>/{seed_01,query_01,query_02}.jpg` (or `_distractor_eastern_t3_<slug>/{query_01,query_02}.jpg`).
+6. Manifest rewrite:
+   - Replace eastern entries in `enrolled_roster` (slug=`t3_<id>`, employee_no=`E-2C-E-t3_<id>`).
+   - Replace eastern entry in `distractor_roster`.
+   - Replace all eastern `files[]` entries (paths, sha256, bytes, native_size, src_filename, source_origin=`jack139/face-dataset/test3`).
+   - `sources.eastern` rewritten with new note + `upstream_path: "test3"`.
+   - Drop `params.eastern_pad_to`/`pad_fill`/`padded_at`. Add `params.eastern_native_at: "2026-04-29 PM-A.3"`.
+
+### Comparison: padded-dlib (A.2) vs funneled-native (A.3)
+
+| dimension | A.2 (test2 + 320 pad) | A.3 (test3 native) |
+|---|---|---|
+| dimension | 320×320 (synthetic) | 250×250 (matches LFW) |
+| face fill | ~45% (gray border around tight crop) | ~30-50% (funneled-style real bg) |
+| identity slug | celeb names (`aidai/baijingting/...`) | anon IDs (`t3_3131124/...`) |
+| seed bytes (median) | ~7 KiB | ~9.5 KiB |
+| ArcFace embed quality | noisy (FP=6 at ml=0.30) | clean (FP=2 at ml=0.30) |
+| signals at default ml=0.40 | 1 TP eastern | 0 TP eastern |
+| signals at sweep ml=0.30 | 6 TP eastern, ~5 FP | 6 TP eastern, ~1 FP |
+| readability of fixture | familiar names | anonymous IDs |
+| dependency on hack | yes (gray-pad) | no |
+
+A.3 is strictly cleaner; the only "loss" is the cosmetic anonymity of slugs and the 1-TP-at-default illusion that A.2 happened to produce.
+
+### Truth-baseline supersession
+
+- `2c-tune-recognition-pr.json` and `2c-tune-recognition-pr-fix-A2-2026-04-29.json` are now **historical-reference only**. Their fixtures no longer exist on disk.
+- New de-facto truth: `docs/baselines/2c-tune-recognition-pr-fix-A3-2026-04-29.json` (overall F1=0.500 @ default; 0.700 @ sweep ml=0.30; eastern face_det=1.0; western F1=0.667 unchanged).
+- Future regressions are measured against PM-A.3 at default thresholds AND at the ml=0.30 sweep row.
+
+### What did not change
+
+- Server: SCRFD-500m (`5e4447f5...` 2.4 MiB). `Thresholds::DEFAULT { low_lower:0.30, match_lower:0.40, augment_upper:0.95 }` unchanged. No Rust changes.
+- Western fixture: LFW-funneled 250×250, untouched. F1=0.667, face_det=1.0 unchanged.
+- Distractor counts (3 total: 1 eastern + 2 western).
+
+### Followups (the recommended next step)
+
+- **Per-bucket match_lower** (combine Path C with Path B from the earlier menu): set `match_lower=0.30` for eastern bucket, keep 0.40 for western. Projected: overall F1 ~0.70, eastern F1 ~0.80, western F1 unchanged. Requires ~30 LoC in `server/src/inference/recall.rs` to thread bucket through to `Hit::bucket(t)`.
+- Alternative: train/swap an Asian-fine-tuned ArcFace (face_embed.onnx). Higher payoff long term but multi-week scope.
+- Document anonymous-ID slug convention: future eastern additions follow `t3_<numeric_id>` to keep upstream traceable.
+- Audit one residual concern: a single learning-bucket entry exists for an eastern query. At ml=0.30 it crosses to TP; consider whether learning bucket should auto-flag eastern queries for human review.
