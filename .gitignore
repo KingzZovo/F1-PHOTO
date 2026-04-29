@@ -28,6 +28,7 @@ __pycache__/
 /models/*.onnx
 /models/*.pt
 /models/*.bin
+/models/history/
 !/models/.gitkeep
 
 # Runtime data

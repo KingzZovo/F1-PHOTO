@@ -69,7 +69,7 @@ use tokio::time::sleep;
 use uuid::Uuid;
 
 use crate::api::AppState;
-use crate::inference::{preprocess, recall, scrfd, yolov8, ModelKind, Thresholds};
+use crate::inference::{preprocess, recall, scrfd, yolov8, BucketThresholds, ModelKind, Thresholds};
 
 /// After this many failed attempts the photo is marked `failed` and the queue
 /// row is removed.
@@ -458,7 +458,10 @@ async fn run_face_pipeline(
         "SCRFD detected faces"
     );
 
-    let thresholds = Thresholds::DEFAULT;
+    // Face pipeline uses per-bucket thresholds (eastern E-2C-E-* gets
+    // match_lower=0.30, others stay at 0.40). Augment-upper still 0.95.
+    let bucket_thresholds = BucketThresholds::DEFAULT;
+    let thresholds = bucket_thresholds.default; // for augment_upper checks
     let mut buckets: Vec<recall::Bucket> = Vec::with_capacity(dets.len());
 
     for det in &dets {
@@ -522,7 +525,7 @@ async fn run_face_pipeline(
         let hit = recall::top1_face(pool, &emb).await?;
         let (bucket, owner_type, owner_id, score) = match &hit {
             Some(h) => (
-                h.bucket(thresholds),
+                h.bucket_per(bucket_thresholds),
                 Some(h.owner_type.clone()),
                 Some(h.owner_id),
                 Some(h.score),

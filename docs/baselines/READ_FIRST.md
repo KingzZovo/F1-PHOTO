@@ -258,3 +258,28 @@ A.3 is strictly cleaner; the only "loss" is the cosmetic anonymity of slugs and 
 - Alternative: train/swap an Asian-fine-tuned ArcFace (face_embed.onnx). Higher payoff long term but multi-week scope.
 - Document anonymous-ID slug convention: future eastern additions follow `t3_<numeric_id>` to keep upstream traceable.
 - Audit one residual concern: a single learning-bucket entry exists for an eastern query. At ml=0.30 it crosses to TP; consider whether learning bucket should auto-flag eastern queries for human review.
+
+
+---
+
+## 2026-04-29 PM-D — Per-bucket recall thresholds (BucketThresholds)
+
+**What changed:** In `server/src/inference/recall.rs`, introduce `BucketThresholds` and dispatch per-hit thresholds based on `persons.employee_no` prefix:
+- Eastern bucket (`E-2C-E-*`): low_lower=0.20, match_lower=0.30
+- Default/western: low_lower=0.30, match_lower=0.40
+
+This is a recall-only change (no SCRFD / YOLO decode changes). The original motivation was to recover Eastern matches projected to land in the 0.30–0.40 band without lowering Western precision.
+
+**Measured result (PM-A.3 fixture; per-bucket dispatch enabled):**
+
+| run | overall P | overall R | overall F1 | TP | FP | FN | TN |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| PM-A.3 baseline @default (ml=0.40) | 1.000 | 0.333 | 0.500 | 8 | 0 | 16 | 6 |
+| **PM-D per-bucket** (E:0.30 / W:0.40) | **1.000** | **0.375** | **0.545** | **9** | **0** | 15 | 6 |
+| reference: global ml=0.30 | 0.875 | 0.583 | 0.700 | 14 | 2 | 10 | 5 |
+
+**Key finding (corrects the earlier hypothesis):** Eastern does *not* mostly sit in 0.30–0.40. On this fixture, eastern top1 scores are mostly ≤ 0.22; only 1 query crosses 0.30. This indicates the embedder is the real bottleneck for test3-eastern. Per-bucket thresholds still deliver a real incremental gain (+1 TP, 0 FP) but not a full unlock.
+
+**Artifacts:**
+- Baseline JSON: `docs/baselines/2c-tune-recognition-pr-fix-D-percell-2026-04-29.json`
+- Eval log: `/tmp/eval-pr-D.log`

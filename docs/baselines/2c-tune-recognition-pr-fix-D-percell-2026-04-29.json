@@ -1,0 +1,569 @@
+{
+  "milestone": "#2c-tune face recognition P/R at retuned Thresholds::DEFAULT",
+  "thresholds_default": {
+    "low_lower": 0.3,
+    "match_lower": 0.4,
+    "augment_upper": 0.95
+  },
+  "manifest_path": "tests/fixtures/face/baseline/MANIFEST.json",
+  "project_id": "b829d696-9803-4ea5-8d24-45f2dd0630c2",
+  "wo_id": "54982bff-f1da-46fe-b118-1a92467c4be3",
+  "counts": {
+    "enrolled_identities": 12,
+    "distractor_identities": 3,
+    "query_photos": 30,
+    "seed_photos": 12
+  },
+  "overall_at_default": {
+    "low_lower": 0.3,
+    "match_lower": 0.4,
+    "tp": 8,
+    "fp": 0,
+    "fn": 16,
+    "tn": 6,
+    "face_detection_rate": 1.0,
+    "precision": 1.0,
+    "recall": 0.3333333333333333,
+    "f1": 0.5,
+    "n": 30
+  },
+  "per_bucket_at_default": {
+    "western": {
+      "low_lower": 0.3,
+      "match_lower": 0.4,
+      "tp": 8,
+      "fp": 0,
+      "fn": 8,
+      "tn": 4,
+      "face_detection_rate": 1.0,
+      "precision": 1.0,
+      "recall": 0.5,
+      "f1": 0.6666666666666666,
+      "n": 20
+    },
+    "eastern": {
+      "low_lower": 0.3,
+      "match_lower": 0.4,
+      "tp": 0,
+      "fp": 0,
+      "fn": 8,
+      "tn": 2,
+      "face_detection_rate": 1.0,
+      "precision": null,
+      "recall": 0.0,
+      "f1": null,
+      "n": 10
+    }
+  },
+  "per_bucket_thresholds": {
+    "eastern": {
+      "low_lower": 0.2,
+      "match_lower": 0.3
+    },
+    "western": {
+      "low_lower": 0.3,
+      "match_lower": 0.4
+    }
+  },
+  "overall_at_per_bucket": {
+    "low_lower": null,
+    "match_lower": null,
+    "tp": 9,
+    "fp": 0,
+    "fn": 15,
+    "tn": 6,
+    "face_detection_rate": 1.0,
+    "precision": 1.0,
+    "recall": 0.375,
+    "f1": 0.5454545454545454,
+    "n": 30
+  },
+  "per_bucket_at_per_bucket": {
+    "western": {
+      "low_lower": 0.3,
+      "match_lower": 0.4,
+      "tp": 8,
+      "fp": 0,
+      "fn": 8,
+      "tn": 4,
+      "face_detection_rate": 1.0,
+      "precision": 1.0,
+      "recall": 0.5,
+      "f1": 0.6666666666666666,
+      "n": 20
+    },
+    "eastern": {
+      "low_lower": 0.2,
+      "match_lower": 0.3,
+      "tp": 1,
+      "fp": 0,
+      "fn": 7,
+      "tn": 2,
+      "face_detection_rate": 1.0,
+      "precision": 1.0,
+      "recall": 0.125,
+      "f1": 0.2222222222222222,
+      "n": 10
+    }
+  },
+  "threshold_sweep": [
+    {
+      "low_lower": 0.3,
+      "match_lower": 0.3,
+      "tp": 14,
+      "fp": 2,
+      "fn": 10,
+      "tn": 5,
+      "face_detection_rate": 1.0,
+      "precision": 0.875,
+      "recall": 0.5833333333333334,
+      "f1": 0.7000000000000001,
+      "n": 30
+    },
+    {
+      "low_lower": 0.3,
+      "match_lower": 0.35,
+      "tp": 10,
+      "fp": 1,
+      "fn": 14,
+      "tn": 6,
+      "face_detection_rate": 1.0,
+      "precision": 0.9090909090909091,
+      "recall": 0.4166666666666667,
+      "f1": 0.5714285714285715,
+      "n": 30
+    },
+    {
+      "low_lower": 0.3,
+      "match_lower": 0.4,
+      "tp": 8,
+      "fp": 0,
+      "fn": 16,
+      "tn": 6,
+      "face_detection_rate": 1.0,
+      "precision": 1.0,
+      "recall": 0.3333333333333333,
+      "f1": 0.5,
+      "n": 30
+    },
+    {
+      "low_lower": 0.3,
+      "match_lower": 0.45,
+      "tp": 7,
+      "fp": 0,
+      "fn": 17,
+      "tn": 6,
+      "face_detection_rate": 1.0,
+      "precision": 1.0,
+      "recall": 0.2916666666666667,
+      "f1": 0.45161290322580644,
+      "n": 30
+    },
+    {
+      "low_lower": 0.3,
+      "match_lower": 0.5,
+      "tp": 6,
+      "fp": 0,
+      "fn": 18,
+      "tn": 6,
+      "face_detection_rate": 1.0,
+      "precision": 1.0,
+      "recall": 0.25,
+      "f1": 0.4,
+      "n": 30
+    },
+    {
+      "low_lower": 0.3,
+      "match_lower": 0.55,
+      "tp": 3,
+      "fp": 0,
+      "fn": 21,
+      "tn": 6,
+      "face_detection_rate": 1.0,
+      "precision": 1.0,
+      "recall": 0.125,
+      "f1": 0.2222222222222222,
+      "n": 30
+    },
+    {
+      "low_lower": 0.3,
+      "match_lower": 0.6,
+      "tp": 2,
+      "fp": 0,
+      "fn": 22,
+      "tn": 6,
+      "face_detection_rate": 1.0,
+      "precision": 1.0,
+      "recall": 0.08333333333333333,
+      "f1": 0.15384615384615385,
+      "n": 30
+    },
+    {
+      "low_lower": 0.3,
+      "match_lower": 0.62,
+      "tp": 2,
+      "fp": 0,
+      "fn": 22,
+      "tn": 6,
+      "face_detection_rate": 1.0,
+      "precision": 1.0,
+      "recall": 0.08333333333333333,
+      "f1": 0.15384615384615385,
+      "n": 30
+    },
+    {
+      "low_lower": 0.3,
+      "match_lower": 0.65,
+      "tp": 2,
+      "fp": 0,
+      "fn": 22,
+      "tn": 6,
+      "face_detection_rate": 1.0,
+      "precision": 1.0,
+      "recall": 0.08333333333333333,
+      "f1": 0.15384615384615385,
+      "n": 30
+    },
+    {
+      "low_lower": 0.3,
+      "match_lower": 0.7,
+      "tp": 0,
+      "fp": 0,
+      "fn": 24,
+      "tn": 6,
+      "face_detection_rate": 1.0,
+      "precision": null,
+      "recall": 0.0,
+      "f1": null,
+      "n": 30
+    },
+    {
+      "low_lower": 0.3,
+      "match_lower": 0.75,
+      "tp": 0,
+      "fp": 0,
+      "fn": 24,
+      "tn": 6,
+      "face_detection_rate": 1.0,
+      "precision": null,
+      "recall": 0.0,
+      "f1": null,
+      "n": 30
+    },
+    {
+      "low_lower": 0.3,
+      "match_lower": 0.8,
+      "tp": 0,
+      "fp": 0,
+      "fn": 24,
+      "tn": 6,
+      "face_detection_rate": 1.0,
+      "precision": null,
+      "recall": 0.0,
+      "f1": null,
+      "n": 30
+    }
+  ],
+  "per_photo": [
+    {
+      "photo_id": "7396d836-ac8d-410f-81bf-bc79792949df",
+      "bucket": "western",
+      "enrolled": true,
+      "expected_slug": "ilan_ramon",
+      "face_count": 1,
+      "top1_status": "learning",
+      "top1_owner_slug": "ilan_ramon",
+      "top1_score": 0.35772
+    },
+    {
+      "photo_id": "7ea8a64d-cd73-4fc4-a06c-70c3b69588bf",
+      "bucket": "western",
+      "enrolled": true,
+      "expected_slug": "ilan_ramon",
+      "face_count": 1,
+      "top1_status": "learning",
+      "top1_owner_slug": "ilan_ramon",
+      "top1_score": 0.32728
+    },
+    {
+      "photo_id": "66440b1d-a069-450b-86c3-65ef05ed1088",
+      "bucket": "western",
+      "enrolled": true,
+      "expected_slug": "valentino_rossi",
+      "face_count": 1,
+      "top1_status": "matched",
+      "top1_owner_slug": "valentino_rossi",
+      "top1_score": 0.51659
+    },
+    {
+      "photo_id": "808c5d51-13c0-4aaf-900d-b5f02f5cbdf1",
+      "bucket": "western",
+      "enrolled": true,
+      "expected_slug": "valentino_rossi",
+      "face_count": 1,
+      "top1_status": "unmatched",
+      "top1_owner_slug": "valentino_rossi",
+      "top1_score": 0.23442
+    },
+    {
+      "photo_id": "9d57024a-76f0-43c9-a401-2c3b211fadd2",
+      "bucket": "western",
+      "enrolled": true,
+      "expected_slug": "angelo_reyes",
+      "face_count": 1,
+      "top1_status": "matched",
+      "top1_owner_slug": "angelo_reyes",
+      "top1_score": 0.50917
+    },
+    {
+      "photo_id": "974257a3-a10a-4f7f-9f3e-2fafdfdbd576",
+      "bucket": "western",
+      "enrolled": true,
+      "expected_slug": "angelo_reyes",
+      "face_count": 1,
+      "top1_status": "learning",
+      "top1_owner_slug": "angelo_reyes",
+      "top1_score": 0.32189
+    },
+    {
+      "photo_id": "1a0c9c88-7834-4559-a555-6d8a20297291",
+      "bucket": "western",
+      "enrolled": true,
+      "expected_slug": "zhu_rongji",
+      "face_count": 1,
+      "top1_status": "matched",
+      "top1_owner_slug": "zhu_rongji",
+      "top1_score": 0.40487
+    },
+    {
+      "photo_id": "6cfbe53a-0591-4317-ba7e-93b88dd16612",
+      "bucket": "western",
+      "enrolled": true,
+      "expected_slug": "zhu_rongji",
+      "face_count": 2,
+      "top1_status": "matched",
+      "top1_owner_slug": "zhu_rongji",
+      "top1_score": 0.57272
+    },
+    {
+      "photo_id": "72f6e65e-579a-48b2-9f59-ac3aba97029d",
+      "bucket": "western",
+      "enrolled": true,
+      "expected_slug": "osama_bin_laden",
+      "face_count": 1,
+      "top1_status": "matched",
+      "top1_owner_slug": "osama_bin_laden",
+      "top1_score": 0.49576
+    },
+    {
+      "photo_id": "fb08294e-b7f6-40af-8311-d2df5910f601",
+      "bucket": "western",
+      "enrolled": true,
+      "expected_slug": "osama_bin_laden",
+      "face_count": 1,
+      "top1_status": "matched",
+      "top1_owner_slug": "osama_bin_laden",
+      "top1_score": 0.65437
+    },
+    {
+      "photo_id": "57cea9a1-65fa-46ef-ab8c-a86634b561b8",
+      "bucket": "western",
+      "enrolled": true,
+      "expected_slug": "lk_advani",
+      "face_count": 3,
+      "top1_status": "learning",
+      "top1_owner_slug": "angelo_reyes",
+      "top1_score": 0.36308
+    },
+    {
+      "photo_id": "ccdff74e-32d0-4ef6-b458-c302806ff1b6",
+      "bucket": "western",
+      "enrolled": true,
+      "expected_slug": "lk_advani",
+      "face_count": 1,
+      "top1_status": "learning",
+      "top1_owner_slug": "lk_advani",
+      "top1_score": 0.33531
+    },
+    {
+      "photo_id": "054f8b01-53d9-4613-a664-99d38cf537ce",
+      "bucket": "western",
+      "enrolled": true,
+      "expected_slug": "robert_kocharian",
+      "face_count": 1,
+      "top1_status": "matched",
+      "top1_owner_slug": "robert_kocharian",
+      "top1_score": 0.54219
+    },
+    {
+      "photo_id": "9a00e963-8216-40f8-a2e0-7f9c4853d86e",
+      "bucket": "western",
+      "enrolled": true,
+      "expected_slug": "robert_kocharian",
+      "face_count": 2,
+      "top1_status": "learning",
+      "top1_owner_slug": "robert_kocharian",
+      "top1_score": 0.39607
+    },
+    {
+      "photo_id": "50d492e8-3f93-46f2-989b-42d4874f1760",
+      "bucket": "western",
+      "enrolled": true,
+      "expected_slug": "amelia_vega",
+      "face_count": 1,
+      "top1_status": "matched",
+      "top1_owner_slug": "amelia_vega",
+      "top1_score": 0.66321
+    },
+    {
+      "photo_id": "812710a4-8b74-464f-a198-3efb4348daf1",
+      "bucket": "western",
+      "enrolled": true,
+      "expected_slug": "amelia_vega",
+      "face_count": 1,
+      "top1_status": "unmatched",
+      "top1_owner_slug": "amelia_vega",
+      "top1_score": 0.29335
+    },
+    {
+      "photo_id": "12285256-d8b8-4fce-a358-26b0a426d31e",
+      "bucket": "western",
+      "enrolled": false,
+      "expected_slug": null,
+      "face_count": 1,
+      "top1_status": "learning",
+      "top1_owner_slug": null,
+      "top1_score": 0.30867
+    },
+    {
+      "photo_id": "124d304e-db10-4e76-96b4-67faa85b56ff",
+      "bucket": "western",
+      "enrolled": false,
+      "expected_slug": null,
+      "face_count": 1,
+      "top1_status": "unmatched",
+      "top1_owner_slug": null,
+      "top1_score": 0.26159
+    },
+    {
+      "photo_id": "342dd4ac-1451-48e7-a46f-e8a113d0f707",
+      "bucket": "western",
+      "enrolled": false,
+      "expected_slug": null,
+      "face_count": 1,
+      "top1_status": "unmatched",
+      "top1_owner_slug": "robert_kocharian",
+      "top1_score": 0.19622
+    },
+    {
+      "photo_id": "4403c7b8-1650-4405-9f9d-ea7ece06df7d",
+      "bucket": "western",
+      "enrolled": false,
+      "expected_slug": null,
+      "face_count": 1,
+      "top1_status": "unmatched",
+      "top1_owner_slug": null,
+      "top1_score": 0.22842
+    },
+    {
+      "photo_id": "95e5cf3f-ae67-4c32-86fb-567955d22100",
+      "bucket": "eastern",
+      "enrolled": true,
+      "expected_slug": "t3_3131124",
+      "face_count": 1,
+      "top1_status": "unmatched",
+      "top1_owner_slug": null,
+      "top1_score": 0.21812
+    },
+    {
+      "photo_id": "cd3ed8e6-cac7-4e77-a0f6-5601034d80d3",
+      "bucket": "eastern",
+      "enrolled": true,
+      "expected_slug": "t3_3131124",
+      "face_count": 1,
+      "top1_status": "matched",
+      "top1_owner_slug": "t3_3131124",
+      "top1_score": 0.33962
+    },
+    {
+      "photo_id": "0ed7f4e6-8420-4daa-beef-e0e962d95900",
+      "bucket": "eastern",
+      "enrolled": true,
+      "expected_slug": "t3_3131306",
+      "face_count": 1,
+      "top1_status": "unmatched",
+      "top1_owner_slug": null,
+      "top1_score": 0.20859
+    },
+    {
+      "photo_id": "92c05ebb-0daa-4c81-bbdb-7d8de8fdaa0c",
+      "bucket": "eastern",
+      "enrolled": true,
+      "expected_slug": "t3_3131306",
+      "face_count": 1,
+      "top1_status": "unmatched",
+      "top1_owner_slug": "zhu_rongji",
+      "top1_score": 0.20702
+    },
+    {
+      "photo_id": "c6ae13fd-f2dc-4fa3-9f8c-6dc5d24b63ab",
+      "bucket": "eastern",
+      "enrolled": true,
+      "expected_slug": "t3_3132111",
+      "face_count": 1,
+      "top1_status": "unmatched",
+      "top1_owner_slug": null,
+      "top1_score": 0.17245
+    },
+    {
+      "photo_id": "fb44ed6f-d084-4e92-94a3-d4a274380b86",
+      "bucket": "eastern",
+      "enrolled": true,
+      "expected_slug": "t3_3132111",
+      "face_count": 1,
+      "top1_status": "unmatched",
+      "top1_owner_slug": null,
+      "top1_score": 0.18534
+    },
+    {
+      "photo_id": "323b7bc1-424e-49cf-b316-2ca91c4cbbf2",
+      "bucket": "eastern",
+      "enrolled": true,
+      "expected_slug": "t3_3134589",
+      "face_count": 1,
+      "top1_status": "unmatched",
+      "top1_owner_slug": null,
+      "top1_score": 0.16803
+    },
+    {
+      "photo_id": "d043e43b-e649-4c44-a529-aee433565d97",
+      "bucket": "eastern",
+      "enrolled": true,
+      "expected_slug": "t3_3134589",
+      "face_count": 1,
+      "top1_status": "learning",
+      "top1_owner_slug": "t3_3132111",
+      "top1_score": 0.20143
+    },
+    {
+      "photo_id": "d9e78c4f-7814-46cc-8e28-eb570d1a093b",
+      "bucket": "eastern",
+      "enrolled": false,
+      "expected_slug": null,
+      "face_count": 1,
+      "top1_status": "unmatched",
+      "top1_owner_slug": "osama_bin_laden",
+      "top1_score": 0.21742
+    },
+    {
+      "photo_id": "f5f91cf3-b81c-4744-91fa-b07ef44cd189",
+      "bucket": "eastern",
+      "enrolled": false,
+      "expected_slug": null,
+      "face_count": 1,
+      "top1_status": "unmatched",
+      "top1_owner_slug": null,
+      "top1_score": 0.20301
+    }
+  ]
+}

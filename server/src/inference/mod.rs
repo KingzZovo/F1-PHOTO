@@ -22,4 +22,4 @@ pub mod scrfd;
 pub mod yolov8;
 
 pub use models::{LoadedModel, ModelInfo, ModelKind, ModelRegistry, ModelRegistryStatus};
-pub use recall::{Bucket, Hit, Thresholds};
+pub use recall::{Bucket, BucketThresholds, Hit, Thresholds};

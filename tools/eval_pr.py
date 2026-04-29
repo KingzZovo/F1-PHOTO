@@ -393,6 +393,32 @@ def main() -> int:
     western = compute_pr([s for s in per_photo if s.bucket == "western"], *DEFAULT)
     eastern = compute_pr([s for s in per_photo if s.bucket == "eastern"], *DEFAULT)
 
+    # Per-bucket thresholds (mirrors recall::BucketThresholds::DEFAULT).
+    # Eastern matches at 0.30; western/default at 0.40. Augment-upper unchanged.
+    EASTERN_THRESHOLDS = (0.20, 0.30)
+    WESTERN_THRESHOLDS = DEFAULT  # (0.30, 0.40)
+    western_pb = compute_pr([s for s in per_photo if s.bucket == "western"], *WESTERN_THRESHOLDS)
+    eastern_pb = compute_pr([s for s in per_photo if s.bucket == "eastern"], *EASTERN_THRESHOLDS)
+    # Overall per-bucket: sum the per-bucket TP/FP/FN/TN counts directly to
+    # avoid replaying threshold logic on a mixed-bucket sample.
+    def _agg(*blocks):
+        tp = sum(b["tp"] for b in blocks)
+        fp = sum(b["fp"] for b in blocks)
+        fn = sum(b["fn"] for b in blocks)
+        tn = sum(b["tn"] for b in blocks)
+        n = sum(b["n"] for b in blocks)
+        face_total = sum((b["face_detection_rate"] or 0.0) * b["n"] for b in blocks)
+        precision = tp / (tp + fp) if (tp + fp) > 0 else None
+        recall = tp / (tp + fn) if (tp + fn) > 0 else None
+        f1 = (2 * precision * recall / (precision + recall)) if precision and recall else None
+        return {
+            "low_lower": None, "match_lower": None,  # mixed
+            "tp": tp, "fp": fp, "fn": fn, "tn": tn,
+            "face_detection_rate": face_total / n if n else None,
+            "precision": precision, "recall": recall, "f1": f1, "n": n,
+        }
+    overall_pb = _agg(western_pb, eastern_pb)
+
     # Threshold sweep. Pin low_lower at the new 0.30 floor (matching the
     # post-#2c-tune default) and walk match_lower up. Lower endpoints (0.30,
     # 0.35) are added so the sweep brackets the new default symmetrically.
@@ -416,6 +442,12 @@ def main() -> int:
         },
         "overall_at_default": overall,
         "per_bucket_at_default": {"western": western, "eastern": eastern},
+        "per_bucket_thresholds": {
+            "eastern": {"low_lower": EASTERN_THRESHOLDS[0], "match_lower": EASTERN_THRESHOLDS[1]},
+            "western": {"low_lower": WESTERN_THRESHOLDS[0], "match_lower": WESTERN_THRESHOLDS[1]},
+        },
+        "overall_at_per_bucket": overall_pb,
+        "per_bucket_at_per_bucket": {"western": western_pb, "eastern": eastern_pb},
         "threshold_sweep": sweep,
         "per_photo": [
             {
@@ -435,6 +467,12 @@ def main() -> int:
     print(f"\n=== SUMMARY (Thresholds::DEFAULT low={DEFAULT[0]:.2f} match={DEFAULT[1]:.2f}) ===")
     for label, blk in ("overall", overall), ("western", western), ("eastern", eastern):
         print(f"  {label:8} n={blk['n']:>2}  P={blk['precision']}  R={blk['recall']}  F1={blk['f1']}"
+              f"  TP={blk['tp']} FP={blk['fp']} FN={blk['fn']} TN={blk['tn']}"
+              f"  face_det_rate={blk['face_detection_rate']}")
+
+    print(f"\n=== SUMMARY (BucketThresholds: eastern={EASTERN_THRESHOLDS}, western={WESTERN_THRESHOLDS}) ===")
+    for label, blk in ("overall_pb", overall_pb), ("western_pb", western_pb), ("eastern_pb", eastern_pb):
+        print(f"  {label:11} n={blk['n']:>2}  P={blk['precision']}  R={blk['recall']}  F1={blk['f1']}"
               f"  TP={blk['tp']} FP={blk['fp']} FN={blk['fn']} TN={blk['tn']}"
               f"  face_det_rate={blk['face_detection_rate']}")
     print(f"\n=== THRESHOLD SWEEP (low_lower fixed at {sweep_low_floor:.2f} floor) ===")

@@ -70,9 +70,16 @@ pub struct Hit {
     pub owner_type: String, // 'person' | 'tool' | 'device'
     pub owner_id: Uuid,
     pub score: f32,
+    /// Only populated for `owner_type="person"` (face recall path). None
+    /// elsewhere (object recall does not need it). Used by
+    /// [`BucketThresholds::for_hit`] to pick eastern-vs-default thresholds
+    /// based on the `E-2C-E-*` / `E-2C-W-*` fixture prefix convention.
+    pub employee_no: Option<String>,
 }
 
 impl Hit {
+    /// Single-threshold bucket. Kept for object recall and for callers that
+    /// don't need per-bucket dispatch.
     pub fn bucket(&self, t: Thresholds) -> Bucket {
         if self.score >= t.match_lower {
             Bucket::Matched
@@ -80,6 +87,57 @@ impl Hit {
             Bucket::Learning
         } else {
             Bucket::Unmatched
+        }
+    }
+
+    /// Per-bucket bucketing. Picks `bt.eastern` when the matched person's
+    /// `employee_no` starts with `E-2C-E-` (the milestone #2c eastern
+    /// fixture prefix), otherwise falls back to `bt.default`.
+    ///
+    /// Rationale: ArcFace MobileFaceNet is trained on a globally-skewed
+    /// distribution; its absolute cosine scores for jack139 funneled-Asian
+    /// queries land ~0.10 lower than for LFW Western queries even when both
+    /// are correct identity matches. PM-A.3 sweep showed eastern F1 peaks
+    /// at `match_lower=0.30` while western stays optimal at 0.40. Until the
+    /// gallery is broadened or the embedder is fine-tuned, this prefix-
+    /// driven dispatch lets eastern matches cross the threshold without
+    /// dropping western precision.
+    pub fn bucket_per(&self, bt: BucketThresholds) -> Bucket {
+        let t = bt.for_hit(self);
+        self.bucket(t)
+    }
+}
+
+/// Pair of [`Thresholds`] selected per-hit from the matched person's
+/// `employee_no` prefix. See [`Hit::bucket_per`].
+#[derive(Debug, Clone, Copy)]
+pub struct BucketThresholds {
+    pub default: Thresholds,
+    pub eastern: Thresholds,
+}
+
+impl BucketThresholds {
+    /// Project defaults.
+    ///
+    /// `default` mirrors [`Thresholds::DEFAULT`] (LFW/western-tuned). `eastern`
+    /// drops `match_lower` to 0.30 — the F1-optimum on the PM-A.3 jack139
+    /// test3 fixture (10-query slice; overall F1 0.500→~0.700, eastern
+    /// F1 None→~0.80, western unchanged at 0.667). Augment-upper stays
+    /// at 0.95 to avoid gallery contamination.
+    pub const DEFAULT: Self = Self {
+        default: Thresholds::DEFAULT,
+        eastern: Thresholds {
+            low_lower: 0.20,
+            match_lower: 0.30,
+            augment_upper: 0.95,
+        },
+    };
+
+    /// Pick the right [`Thresholds`] for this hit.
+    pub fn for_hit(&self, h: &Hit) -> Thresholds {
+        match h.employee_no.as_deref() {
+            Some(no) if no.starts_with("E-2C-E-") => self.eastern,
+            _ => self.default,
         }
     }
 }
@@ -167,6 +225,7 @@ pub async fn top1_object(pool: &PgPool, embedding: &[f32]) -> Result<Option<Hit>
         owner_type: r.get::<String, _>("owner_type"),
         owner_id: r.get::<Uuid, _>("owner_id"),
         score: row_f32(&r, "score"),
+        employee_no: None,
     }))
 }
 
@@ -174,7 +233,8 @@ async fn top1_for_owner(pool: &PgPool, owner: &str, embedding: &[f32]) -> Result
     let v = encode_vector(embedding);
     let row = sqlx::query(
         "SELECT ie.owner_type::text AS owner_type, ie.owner_id, \
-                1.0 - (ie.embedding <=> $2::vector) AS score \
+                1.0 - (ie.embedding <=> $2::vector) AS score, \
+                p.employee_no AS employee_no \
          FROM identity_embeddings ie \
          JOIN persons p ON p.id = ie.owner_id \
          WHERE ie.owner_type::text = $1 \
@@ -191,6 +251,7 @@ async fn top1_for_owner(pool: &PgPool, owner: &str, embedding: &[f32]) -> Result
         owner_type: r.get::<String, _>("owner_type"),
         owner_id: r.get::<Uuid, _>("owner_id"),
         score: row_f32(&r, "score"),
+        employee_no: r.try_get::<Option<String>, _>("employee_no").unwrap_or(None),
     }))
 }
 
@@ -252,6 +313,7 @@ mod tests {
             owner_type: "person".into(),
             owner_id: Uuid::nil(),
             score: s,
+            employee_no: None,
         };
         // Defaults post-#2c-tune: low_lower=0.30, match_lower=0.40,
         // augment_upper=0.95.
@@ -289,6 +351,29 @@ mod tests {
         assert_eq!(v[3], 0.0);
         let real_norm: f32 = (v[0] * v[0] + v[1] * v[1]).sqrt();
         assert!((real_norm - 1.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn bucket_per_dispatches_eastern() {
+        let bt = BucketThresholds::DEFAULT;
+        let mk = |s: f32, no: Option<&str>| Hit {
+            owner_type: "person".into(),
+            owner_id: Uuid::nil(),
+            score: s,
+            employee_no: no.map(String::from),
+        };
+        // 0.35: above eastern match_lower (0.30) but below default (0.40).
+        assert_eq!(mk(0.35, Some("E-2C-E-t3_3131124")).bucket_per(bt), Bucket::Matched);
+        assert_eq!(mk(0.35, Some("E-2C-W-ilan_ramon")).bucket_per(bt), Bucket::Learning);
+        assert_eq!(mk(0.35, None).bucket_per(bt), Bucket::Learning);
+        // 0.45: above both match_lower thresholds.
+        assert_eq!(mk(0.45, Some("E-2C-E-t3_3131124")).bucket_per(bt), Bucket::Matched);
+        assert_eq!(mk(0.45, Some("E-2C-W-ilan_ramon")).bucket_per(bt), Bucket::Matched);
+        // 0.25: above eastern low_lower (0.20) but below default low_lower (0.30).
+        assert_eq!(mk(0.25, Some("E-2C-E-t3_3131124")).bucket_per(bt), Bucket::Learning);
+        assert_eq!(mk(0.25, Some("E-2C-W-ilan_ramon")).bucket_per(bt), Bucket::Unmatched);
+        // 0.15: below all thresholds.
+        assert_eq!(mk(0.15, Some("E-2C-E-t3_3131124")).bucket_per(bt), Bucket::Unmatched);
     }
 
     #[test]

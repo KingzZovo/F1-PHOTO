@@ -212,3 +212,20 @@
 - Future regressions measured at default ml=0.40 AND at sweep ml=0.30 row.
 
 **Authorization:** King's `C` (2026-04-29 22:40) selected Path C (richer eastern source). Done.
+
+
+---
+
+## 2026-04-29 PM-D — Per-bucket recall thresholds (BucketThresholds)
+
+**Decision:** Ship PM-D as a conservative, low-risk recall improvement: +1 TP, 0 FP, western unchanged.
+
+**Change:** Add per-bucket threshold dispatch for face recall based on `persons.employee_no` prefix:
+- Eastern (`E-2C-E-*`): (low_lower=0.20, match_lower=0.30)
+- Default/western: (low_lower=0.30, match_lower=0.40)
+
+**Measured:** overall F1 0.500 → 0.545 (+0.045), TP 8 → 9, FP 0 → 0.
+
+**Important correction:** The original assumption “eastern mostly sits in 0.30–0.40” is only partially true. On test3-eastern, most top1 scores are ≤ 0.22; embedder separability is the true bottleneck. PM-D is still net-positive and safe, but it is not the full unlock.
+
+**Artifacts:** `docs/baselines/2c-tune-recognition-pr-fix-D-percell-2026-04-29.json` + `/tmp/eval-pr-D.log`.
