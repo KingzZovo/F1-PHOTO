@@ -58,3 +58,34 @@ western.tp + eastern.tp ≡ overall.tp ✓、overall ≡ sweep@default ✓、算
 - `gallery-quality-audit-2026-04-29.json` — 当日 `identity_embeddings` + `persons` 口径快照（只读，无副作用）。**127 persons / 248 embeds**；4 cold-start、6 only-initial、119 complete（93.7%）。
 - `scrfd-eastern-fixture-diagnosis-2026-04-29.md` — eastern `face_detection_rate=0.0` 根因定调。**结论：fixture 双重插值 + SCRFD-500m 容量不足**，不是 recall 阈值问题。King 需从 A/B/C/D 四个修复选项中选择（详见该 MD）。
 - **今日未重跑 face PR baseline**（未产生 `2c-tune-recognition-pr-2026-04-29.json`）。原因：自 `#2c-tune` (`e8c3358`) 后 server inference 路径零漂移，今日 HEAD 在之后只多了 3 个不影响 face PR 的 commit：`f16da9b` (YOLOv8 decoder shape)、`23126a4` (worker tool class collapse + model_versions)、`e042e99` (eval_pr.py env override)。`2c-tune-recognition-pr.json` 仍是当前真值。如果未来动了 `server/src/inference/{recall,scrfd,preprocess}.rs` 或 `models/`，重跑才有意义。
+
+## 2026-04-29 PM-B：SCRFD-10g 替换实验（**否定结论**）
+
+落地于 `2c-tune-recognition-pr-scrfd-10g-2026-04-29.json`，与 `2c-tune-recognition-pr.json`（500m，当前真值）对照：
+
+| 口径 | 模型 | tp | fp | fn | recall | F1 | face_det_rate |
+|------|------|-----|-----|-----|--------|------|---------------|
+| overall | SCRFD-500m | 8 | 0 | 16 | 0.333 | 0.500 | 0.667 |
+| overall | SCRFD-10g | 9 | 0 | 15 | 0.375 | **0.545** | 0.667 |
+| western | SCRFD-500m | 8 | 0 | 8 | 0.500 | 0.667 | 1.0 |
+| western | SCRFD-10g | 9 | 0 | 7 | 0.5625 | **0.720** | 1.0 |
+| eastern | SCRFD-500m | 0 | 0 | 8 | 0.0 | None | **0.0** |
+| eastern | SCRFD-10g | 0 | 0 | 8 | 0.0 | None | **0.0** |
+
+**结论：模型容量从 ~2.5MB → 16.9MB（6.7×）后**
+- western 微涨（F1 0.667 → 0.720，+8%），但已经不是瓶颈。
+- eastern `face_detection_rate` 仍然 **0.0**，**模型容量上 6.7× 也救不了**。
+- 印证 `scrfd-eastern-fixture-diagnosis-2026-04-29.md` 的根因诊断：**fixture 双重插值是元凶**，模型再大也无法在 bicubic-blurred 的 ~140×147→256→640 输入上恢复人脸高频特征。
+
+**生产决策：保留 500m。** 不为 western 微涨付出 6.7× 的内存与延迟代价。`models/face_detect.onnx` 已恢复为 500m（sha `5e4447f5...`）。10g 副本保留在 `models/history/` (gitignored) 以备将来对比。
+
+**B 实验流程**（可重现）：
+1. 备份 500m → `models/history/face_detect.v0.det_500m.onnx`
+2. 下载 10g `https://huggingface.co/deepghs/insightface/resolve/main/buffalo_l/det_10g.onnx`（sha256 `5838f7fe053675b1c7a08b633df49e7af5495cee0493c7dcf6697200b85b5b91`）
+3. ONNX 形状自检：IR v6 opset 11，input `[1,3,?,?]`，9 outputs `12800/3200/800 × {1,4,10}`，与 500m 完全同构；Rust SCRFD 解码无需改
+4. atomic swap → 重启 server → 跑 `tools/eval_pr.py`
+5. 还原 500m → 重启 → 健康检查
+
+**SCRFD-2.5g 没测**：deepghs/insightface 上游只发 buffalo_s (500m) 与 buffalo_l (10g)，buffalo_m (2.5g) 缺失；其它公开镜像皆 gated 或 404。鉴于 10g 已证伪 "扩容能解 eastern" 假设，2.5g 不再有探索价值。
+
+**下一步路径（A）**：重做 eastern fixture 去除第一次 bicubic-upscale。从 jack139/face-dataset/train2 重新拉 native ~140×147 crops，存盘时不做 PIL upscale，让 server SCRFD 内部 letterbox 单次插值即可。预期能把 eastern `face_detection_rate` 从 0 拉起。
