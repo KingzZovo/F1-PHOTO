@@ -226,7 +226,7 @@ def main() -> int:
 
     # 2) Project + WO
     pj = http_post_json(f"{base}/api/projects", token, {
-        "code": "P-2C-PR",
+        "code": os.environ.get("F1C_PROJECT_CODE", "P-2C-PR"),
         "name": "#2c P/R baseline",
         "icon": "🎯",
         "description": "Milestone #2c face recognition Precision/Recall baseline",
@@ -234,7 +234,7 @@ def main() -> int:
     project_id = pj["id"]
     print(f"[eval_pr] created project {project_id}")
     wo = http_post_json(f"{base}/api/projects/{project_id}/work_orders", token, {
-        "code": "WO-2C",
+        "code": os.environ.get("F1C_WO_CODE", "WO-2C"),
         "title": "baseline WO",
     })
     wo_id = wo["id"]
