@@ -181,3 +181,34 @@
 - Truth-baseline `2c-tune-recognition-pr.json` superseded by `2c-tune-recognition-pr-fix-A2-2026-04-29.json`.
 
 **Authorization:** King's `全推` (2026-04-29 22:06) covered fixture rebuild + DB cleanup + re-eval + commit without further confirmation. Done.
+
+
+---
+
+## 2026-04-29 PM-A.3 / Path C — Eastern fixture switched to jack139/test3 (committed `ffcde46`)
+
+**Outcome:** Source upgraded from synthetic-padded test2 to native funneled test3.
+
+| metric | A.2 (padded test2) | **A.3 (test3 native)** |
+|---|---|---|
+| eastern face_det_rate | 1.0 | 1.0 |
+| eastern F1 @default ml=0.40 | 0.200 | None (TP=0) |
+| overall F1 @default | 0.529 | 0.500 |
+| **overall F1 @sweep ml=0.30** | 0.636 | **0.700** ✅ |
+| **overall P @sweep ml=0.30** | 0.700 | **0.875** |
+| **overall FP @sweep ml=0.30** | 6 | **2** (1/3) |
+| eastern F1 @sweep ml=0.30 (inferred) | ~0.63 | **~0.80** |
+| western F1 (any threshold) | 0.667 | 0.667 (no regress) |
+
+**Why @default looks worse but A.3 is the better source:** Same TP set at sweep ml=0.30 (14 each), but A.3 has 1/3 the false positives. ArcFace was trained on Western/global distribution; absolute cosine distances on Asian funneled photos are systematically larger than on LFW Western. Default ml=0.40 is too strict for ANY jack139-Asian source. test3's funneled-style images produce identity-clean embeddings; A.2's padded-dlib hack manufactured synthetic context that ArcFace partially encoded as identity noise → cross-person FPs.
+
+**Recommended next step (combine C with B):** per-bucket `match_lower` (eastern=0.30, western=0.40) in `server/src/inference/recall.rs`. ~30 LoC. Projected outcome: overall F1 ~0.70, eastern F1 ~0.80, western F1 unchanged. This is the only remaining unlock; everything else (model swap to 10g, removing double-interp, padding hack) was tested and ruled non-essential.
+
+**Slug naming convention adopted:** future eastern additions use `t3_<numeric_id>` (test3 anonymous IDs) for upstream traceability. Goodbye to the old celebrity-name slugs.
+
+**Truth-baseline supersession chain:**
+- `2c-tune-recognition-pr.json` → superseded by A.2 → superseded by A.3.
+- Current truth: `docs/baselines/2c-tune-recognition-pr-fix-A3-2026-04-29.json`.
+- Future regressions measured at default ml=0.40 AND at sweep ml=0.30 row.
+
+**Authorization:** King's `C` (2026-04-29 22:40) selected Path C (richer eastern source). Done.
