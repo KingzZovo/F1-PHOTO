@@ -1,0 +1,54 @@
+{
+  "created_at": "2026-04-29T04:01:25Z",
+  "docs_commit": null,
+  "feat_commit": "c09cad7",
+  "inputs": {
+    "candidate_onnx": "models/object_detect.onnx",
+    "current_onnx": "models/object_detect.onnx",
+    "face_candidate_report": "docs/baselines/2c-recognition-pr.json",
+    "face_current_report": "docs/baselines/2c-recognition-pr.json",
+    "tool_candidate_report": "/tmp/2-tool-rerun-2026-04-29.json",
+    "tool_current_report": "/tmp/2-tool-rerun-2026-04-29.json"
+  },
+  "milestone": "#7c-eval-self-wiring",
+  "milestone_label": "shadow_eval --from-reports self-vs-self wiring smoke (2026-04-29)",
+  "next_steps": [
+    "Produce a candidate object_detect ONNX via #7b-train (currently blocked: training set requires >=50 manual_corrected rows; reviewer accumulation has not started, manual_corrected_total=0).",
+    "Once a candidate ONNX exists: rerun eval_pr.py and eval_distribution.py with the candidate model loaded -> obtain face/tool candidate reports -> rerun shadow_eval.py --from-reports for the real candidate-vs-current verdict.",
+    "Live mode (without --from-reports) is also available; orchestrator handles the eval_distribution.py rerun internally given a candidate ONNX path."
+  ],
+  "non_goals": [
+    "NOT a candidate-vs-current comparison; both inputs are identical.",
+    "NOT a #5-bootstrap retrain trigger; gate (>=50 manual_corrected rows) remains unsatisfied.",
+    "NOT an eval_pr.py rerun against the live server; reuses the existing 2c-recognition-pr.json artifact."
+  ],
+  "output": {
+    "candidate_onnx_sha256": "16569e5752f09ecad96b22a0a1065c9a7c311e84254177ecdf2de541da13dca1",
+    "current_onnx_sha256": "16569e5752f09ecad96b22a0a1065c9a7c311e84254177ecdf2de541da13dca1",
+    "face": {
+      "candidate_western_f1": 0.2222222222222222,
+      "current_western_f1": 0.2222222222222222,
+      "delta": 0.0,
+      "fixture_photos": 20
+    },
+    "generated_at": "2026-04-29T04:00:52Z",
+    "tool": {
+      "candidate_recognition_items_mean": 3.261904761904762,
+      "current_recognition_items_mean": 3.261904761904762,
+      "delta": 0.0,
+      "fixture_photos": 42
+    }
+  },
+  "reproducer": "python3 tools/shadow_eval.py --from-reports --tool-current-report /tmp/2-tool-rerun-2026-04-29.json --tool-candidate-report /tmp/2-tool-rerun-2026-04-29.json --face-current-report docs/baselines/2c-recognition-pr.json --face-candidate-report docs/baselines/2c-recognition-pr.json --current-onnx models/object_detect.onnx --candidate-onnx models/object_detect.onnx --out /tmp/7c-eval-self.json",
+  "status": "PASS",
+  "status_note": "self-vs-self wiring verified end-to-end; face_delta=0.0 / tool_delta=0.0 / current_onnx_sha == candidate_onnx_sha. Confirms tools/shadow_eval.py --from-reports CLI is wired correctly and produces the expected zero-delta on identical inputs. Does NOT exercise a real candidate vs current comparison; that step is gated on producing a candidate ONNX (see next_steps).",
+  "tool": "tools/shadow_eval.py --from-reports",
+  "validation": {
+    "face_delta_zero": true,
+    "face_western_f1_locked": 0.2222222222222222,
+    "onnx_sha_equal": true,
+    "tool_delta_zero": true,
+    "tool_recognition_items_mean_locked": 3.261904761904762
+  },
+  "why_run": "Self-vs-self wiring smoke for the shadow_eval orchestrator: confirms parse_face_report / parse_tool_report / assemble_eval_deltas paths work end-to-end on real workspace fixtures, and locks the expected zero-delta shape so future candidate-vs-current runs have an unambiguous \"no-op control\" to A/B against. Also surfaces a schema clarification: --face-current-report requires an eval_pr.py output (per_bucket_at_default.western.{f1,n}); eval_distribution.py reports (e.g. 2-distribution-face-rerun-2026-04-29.json) are NOT compatible despite being labelled \"face\" baselines. The previously-stated half-unblock from the #2-face-rerun blob does not apply."
+}
