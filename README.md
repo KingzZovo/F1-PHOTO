@@ -50,7 +50,9 @@ F1-photo/
 
 ## 当前状态
 
-架构与文档阶段（M0），未开始 M1 编码。
+已进入 v1.5.0 rollout / 推理链路迭代阶段：\
+- real pipeline（SCRFD + ArcFace + YOLOv8n + DINOv2）已落地并持续用 baseline 驱动演进\
+- 最新状态与决策以 `docs/v1.4.x-v1.5.0-roadmap.md` 为单一事实源
 
 ## License
 
