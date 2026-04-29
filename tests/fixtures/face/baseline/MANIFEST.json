@@ -8,11 +8,19 @@
     "EASTERN_DISTRACTOR": 1,
     "MIN_LFW_COUNT": 3,
     "MAX_LFW_COUNT": 10,
-    "upscale_to": [
-      256,
-      256
+    "upscale_to": null,
+    "upscale_resampler": null,
+    "eastern_upscale_disabled_at": "2026-04-29 PM-A",
+    "eastern_pad_to": [
+      320,
+      320
     ],
-    "upscale_resampler": "PIL.Image.BICUBIC"
+    "eastern_pad_fill": [
+      128,
+      128,
+      128
+    ],
+    "eastern_padded_at": "2026-04-29 PM-A.2"
   },
   "sources": {
     "western": {
@@ -28,7 +36,7 @@
       "fetched_via": "GitHub contents API + raw.githubusercontent.com",
       "license": "Repo is MIT-licensed; underlying portrait images are filtered crops produced by jack139's gen_data.py from public Asian-celeb sources. Treat as research-only.",
       "native_size": "~140x147 RGB (dlib face crops)",
-      "note": "Bicubic-upscaled to 256x256 so SCRFD's 640x640 input pipeline operates at a usable scale; detection rate is reported separately for this bucket in the eval output."
+      "note": "Native ~131-159x125-154 RGB dlib crops, gray-padded to 320x320 so the face occupies ~45% of the frame (similar to LFW funneled). Pre-PM-A: was bicubic-upscaled to 256x256 (PIL.BICUBIC) -> double-interp killed face_det_rate. PM-A: stored native -> still face_det_rate=0 because dlib-crops have ~95% face fill, no context. PM-A.2 (this): pad to 320x320 gray-fill so SCRFD sees face-with-context."
     }
   },
   "future_extensions": [
@@ -449,14 +457,20 @@
       "identity_display": "caihancen",
       "bucket": "eastern",
       "enrolled": true,
-      "upscaled_from": "(153, 140)",
-      "upscaled_to": [
-        256,
-        256
-      ],
+      "upscaled_from": null,
+      "upscaled_to": null,
       "source_origin": "jack139/face-dataset/train2",
-      "sha256": "a7317027d8f072c90a7fbeccaed8933f0f87df198bf1e294f06e6c29d626e322",
-      "bytes": 10571
+      "sha256": "25dd09b4d5e494ab3466acd1a50da94b52db717d6e1a69dedbb7998e3e067928",
+      "bytes": 6700,
+      "native_size": [
+        145,
+        145
+      ],
+      "src_filename": "1_0_caihancen_0031.jpg",
+      "padded_to": [
+        320,
+        320
+      ]
     },
     {
       "path": "tests/fixtures/face/baseline/eastern_caihancen/query_01.jpg",
@@ -465,14 +479,20 @@
       "identity_display": "caihancen",
       "bucket": "eastern",
       "enrolled": true,
-      "upscaled_from": "(141, 137)",
-      "upscaled_to": [
-        256,
-        256
-      ],
+      "upscaled_from": null,
+      "upscaled_to": null,
       "source_origin": "jack139/face-dataset/train2",
-      "sha256": "eaf5604d17f91ee74e2f373e6b508fa9c6b4b6017c0845e175f0ed2d8f603d8d",
-      "bytes": 10345
+      "sha256": "bf0847cbdddee6329d0c0932b9a74f4493a4c3f7df5a481e8612899034e5256c",
+      "bytes": 8168,
+      "native_size": [
+        159,
+        136
+      ],
+      "src_filename": "1_0_caihancen_0051.jpg",
+      "padded_to": [
+        320,
+        320
+      ]
     },
     {
       "path": "tests/fixtures/face/baseline/eastern_caihancen/query_02.jpg",
@@ -481,14 +501,20 @@
       "identity_display": "caihancen",
       "bucket": "eastern",
       "enrolled": true,
-      "upscaled_from": "(134, 149)",
-      "upscaled_to": [
-        256,
-        256
-      ],
+      "upscaled_from": null,
+      "upscaled_to": null,
       "source_origin": "jack139/face-dataset/train2",
-      "sha256": "1c4735e1e16f77c29d9d44cabb7fd031f87beeafa022a6a916f75f8487461af0",
-      "bytes": 9925
+      "sha256": "6941720e77b6beebcbc07ba912d8f7c4679443b0f1c3f8d4f451e898e7600d18",
+      "bytes": 9033,
+      "native_size": [
+        155,
+        135
+      ],
+      "src_filename": "1_0_caihancen_0052.jpg",
+      "padded_to": [
+        320,
+        320
+      ]
     },
     {
       "path": "tests/fixtures/face/baseline/eastern_baijingting/seed_01.jpg",
@@ -497,14 +523,20 @@
       "identity_display": "baijingting",
       "bucket": "eastern",
       "enrolled": true,
-      "upscaled_from": "(139, 137)",
-      "upscaled_to": [
-        256,
-        256
-      ],
+      "upscaled_from": null,
+      "upscaled_to": null,
       "source_origin": "jack139/face-dataset/train2",
-      "sha256": "0cae39e51ec7c8c05796677b51e60dc18a85deb7db533427a911456da9dc5821",
-      "bytes": 11180
+      "sha256": "0123c779fecebe0cacc65b92d0a090ec2caf78d6b2fc5776c2877e3159538bc3",
+      "bytes": 7421,
+      "native_size": [
+        155,
+        147
+      ],
+      "src_filename": "1_0_baijingting_0009.jpg",
+      "padded_to": [
+        320,
+        320
+      ]
     },
     {
       "path": "tests/fixtures/face/baseline/eastern_baijingting/query_01.jpg",
@@ -513,14 +545,20 @@
       "identity_display": "baijingting",
       "bucket": "eastern",
       "enrolled": true,
-      "upscaled_from": "(141, 152)",
-      "upscaled_to": [
-        256,
-        256
-      ],
+      "upscaled_from": null,
+      "upscaled_to": null,
       "source_origin": "jack139/face-dataset/train2",
-      "sha256": "f1ee5fa26b415bffaf9426e1f402175228569f7ee7d906d1eb576e687d469c53",
-      "bytes": 10705
+      "sha256": "8d0bada2fcf2ef4f7c8860c0455c5c34812439367451d4a15f4c68498e2f0be6",
+      "bytes": 7675,
+      "native_size": [
+        146,
+        151
+      ],
+      "src_filename": "1_0_baijingting_0022.jpg",
+      "padded_to": [
+        320,
+        320
+      ]
     },
     {
       "path": "tests/fixtures/face/baseline/eastern_baijingting/query_02.jpg",
@@ -529,14 +567,20 @@
       "identity_display": "baijingting",
       "bucket": "eastern",
       "enrolled": true,
-      "upscaled_from": "(153, 148)",
-      "upscaled_to": [
-        256,
-        256
-      ],
+      "upscaled_from": null,
+      "upscaled_to": null,
       "source_origin": "jack139/face-dataset/train2",
-      "sha256": "1aa3a0c1846be0b0b814a5152b81cc00b1955b5b17e49002aaf0a7ce09d1fb6e",
-      "bytes": 8942
+      "sha256": "4a178b58adb4f2a0ee034b6920cb25a92af9acb3747d5a7c39adb17b56aaa288",
+      "bytes": 7670,
+      "native_size": [
+        153,
+        134
+      ],
+      "src_filename": "1_0_baijingting_0023.jpg",
+      "padded_to": [
+        320,
+        320
+      ]
     },
     {
       "path": "tests/fixtures/face/baseline/eastern_aidai/seed_01.jpg",
@@ -545,14 +589,20 @@
       "identity_display": "aidai",
       "bucket": "eastern",
       "enrolled": true,
-      "upscaled_from": "(140, 147)",
-      "upscaled_to": [
-        256,
-        256
-      ],
+      "upscaled_from": null,
+      "upscaled_to": null,
       "source_origin": "jack139/face-dataset/train2",
-      "sha256": "179ddfd20169c26d19db94602d2a52d388d370f779285c8424d0b4853e72d11c",
-      "bytes": 9850
+      "sha256": "9bc769af2a5e362d155248d8656bed22c4f5d2a9ef2b12b18e5dd914f89ff18d",
+      "bytes": 7787,
+      "native_size": [
+        131,
+        151
+      ],
+      "src_filename": "1_0_aidai_0021.jpg",
+      "padded_to": [
+        320,
+        320
+      ]
     },
     {
       "path": "tests/fixtures/face/baseline/eastern_aidai/query_01.jpg",
@@ -561,14 +611,20 @@
       "identity_display": "aidai",
       "bucket": "eastern",
       "enrolled": true,
-      "upscaled_from": "(144, 133)",
-      "upscaled_to": [
-        256,
-        256
-      ],
+      "upscaled_from": null,
+      "upscaled_to": null,
       "source_origin": "jack139/face-dataset/train2",
-      "sha256": "8f63870fe171234a9c906796073535bb892ea6fbc972f1d44189acf1efbc5b03",
-      "bytes": 11230
+      "sha256": "6665f187312de8d7577fac3b761531896697ff900288d60869448b722fa88450",
+      "bytes": 7410,
+      "native_size": [
+        138,
+        135
+      ],
+      "src_filename": "1_0_aidai_0033.jpg",
+      "padded_to": [
+        320,
+        320
+      ]
     },
     {
       "path": "tests/fixtures/face/baseline/eastern_aidai/query_02.jpg",
@@ -577,14 +633,20 @@
       "identity_display": "aidai",
       "bucket": "eastern",
       "enrolled": true,
-      "upscaled_from": "(139, 144)",
-      "upscaled_to": [
-        256,
-        256
-      ],
+      "upscaled_from": null,
+      "upscaled_to": null,
       "source_origin": "jack139/face-dataset/train2",
-      "sha256": "9152c291ef3c786235329e1b1060ed90d07e9a02adfc1a48b7443d148f788f67",
-      "bytes": 11789
+      "sha256": "b18572f202fb3f785e5ecad0379e3432dad26ae09bf4eaa933a8a467b9c37d37",
+      "bytes": 6384,
+      "native_size": [
+        143,
+        125
+      ],
+      "src_filename": "1_0_aidai_0034.jpg",
+      "padded_to": [
+        320,
+        320
+      ]
     },
     {
       "path": "tests/fixtures/face/baseline/eastern_baobeier/seed_01.jpg",
@@ -593,14 +655,20 @@
       "identity_display": "baobeier",
       "bucket": "eastern",
       "enrolled": true,
-      "upscaled_from": "(144, 139)",
-      "upscaled_to": [
-        256,
-        256
-      ],
+      "upscaled_from": null,
+      "upscaled_to": null,
       "source_origin": "jack139/face-dataset/train2",
-      "sha256": "19dca1e3de2355825771d78969f32b2bae4c5e0973277187050739a50492616b",
-      "bytes": 9714
+      "sha256": "10183cbe65fd69a9ab77dfe90004388a18d5c35c01f8b70ff75d2e77e792ef55",
+      "bytes": 7141,
+      "native_size": [
+        140,
+        132
+      ],
+      "src_filename": "1_0_baobeier_0029.jpg",
+      "padded_to": [
+        320,
+        320
+      ]
     },
     {
       "path": "tests/fixtures/face/baseline/eastern_baobeier/query_01.jpg",
@@ -609,14 +677,20 @@
       "identity_display": "baobeier",
       "bucket": "eastern",
       "enrolled": true,
-      "upscaled_from": "(134, 145)",
-      "upscaled_to": [
-        256,
-        256
-      ],
+      "upscaled_from": null,
+      "upscaled_to": null,
       "source_origin": "jack139/face-dataset/train2",
-      "sha256": "c721ff0c024405cfdc336af2be2e9d80e8e7bb5eacbcfb4a9929e4b0bc7c7a3c",
-      "bytes": 12055
+      "sha256": "a20ab0b4d3daf3ec8ee2259906ac1a6d8d593f8f7f7f81f25e802931efb6d6d9",
+      "bytes": 7035,
+      "native_size": [
+        148,
+        143
+      ],
+      "src_filename": "1_0_baobeier_0031.jpg",
+      "padded_to": [
+        320,
+        320
+      ]
     },
     {
       "path": "tests/fixtures/face/baseline/eastern_baobeier/query_02.jpg",
@@ -625,14 +699,20 @@
       "identity_display": "baobeier",
       "bucket": "eastern",
       "enrolled": true,
-      "upscaled_from": "(137, 146)",
-      "upscaled_to": [
-        256,
-        256
-      ],
+      "upscaled_from": null,
+      "upscaled_to": null,
       "source_origin": "jack139/face-dataset/train2",
-      "sha256": "d660ccdb30348dbcae75b11878b8b5e99d9d4acde425179cda0c8dba1d8892a8",
-      "bytes": 9509
+      "sha256": "4da62f6e9fda85b451e02285713b30d3f42e4b5e0f7725e81787649baaf7a251",
+      "bytes": 7351,
+      "native_size": [
+        146,
+        154
+      ],
+      "src_filename": "1_0_baobeier_0035.jpg",
+      "padded_to": [
+        320,
+        320
+      ]
     },
     {
       "path": "tests/fixtures/face/baseline/_distractor_western_thomas_rupprath/query_01.jpg",
@@ -693,14 +773,20 @@
       "identity_display": "caiyilin",
       "bucket": "eastern",
       "enrolled": false,
-      "upscaled_from": "(133, 143)",
-      "upscaled_to": [
-        256,
-        256
-      ],
+      "upscaled_from": null,
+      "upscaled_to": null,
       "source_origin": "jack139/face-dataset/train2",
-      "sha256": "ff640aac3e5507b30a0fb5a3b632a23a8afffb85a4e7e92248f9762fd50a5fa7",
-      "bytes": 10102
+      "sha256": "5864a02a21218e4b276b041d956050f73a2aba1853934eb49636ea62c62a75bb",
+      "bytes": 6734,
+      "native_size": [
+        127,
+        137
+      ],
+      "src_filename": "0_0_caiyilin_0147.jpg",
+      "padded_to": [
+        320,
+        320
+      ]
     },
     {
       "path": "tests/fixtures/face/baseline/_distractor_eastern_caiyilin/query_02.jpg",
@@ -709,14 +795,20 @@
       "identity_display": "caiyilin",
       "bucket": "eastern",
       "enrolled": false,
-      "upscaled_from": "(148, 145)",
-      "upscaled_to": [
-        256,
-        256
-      ],
+      "upscaled_from": null,
+      "upscaled_to": null,
       "source_origin": "jack139/face-dataset/train2",
-      "sha256": "a60e691e68235061b1774ed59e31993d62f76601913fd1bfdd325963c6cc0f2e",
-      "bytes": 9058
+      "sha256": "aad043b69b34b5427da45f6adc9b676808a7a3b03de1df37e99f8e46aca3ce8a",
+      "bytes": 7806,
+      "native_size": [
+        152,
+        136
+      ],
+      "src_filename": "1_0_caiyilin_0002.jpg",
+      "padded_to": [
+        320,
+        320
+      ]
     }
   ]
 }

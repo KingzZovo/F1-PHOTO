@@ -89,3 +89,83 @@ western.tp + eastern.tp ≡ overall.tp ✓、overall ≡ sweep@default ✓、算
 **SCRFD-2.5g 没测**：deepghs/insightface 上游只发 buffalo_s (500m) 与 buffalo_l (10g)，buffalo_m (2.5g) 缺失；其它公开镜像皆 gated 或 404。鉴于 10g 已证伪 "扩容能解 eastern" 假设，2.5g 不再有探索价值。
 
 **下一步路径（A）**：重做 eastern fixture 去除第一次 bicubic-upscale。从 jack139/face-dataset/train2 重新拉 native ~140×147 crops，存盘时不做 PIL upscale，让 server SCRFD 内部 letterbox 单次插值即可。预期能把 eastern `face_detection_rate` 从 0 拉起。
+
+
+---
+
+## PM-A & PM-A.2 — Eastern fixture rebuild from native jack139 crops (2026-04-29)
+
+**Status:** PM-A (no upscale, no pad) → still face_det_rate=0.0. PM-A.2 (no upscale + 320×320 gray-pad) → **face_det_rate=1.0**, eastern F1 None→0.2.
+
+### Summary table (eastern bucket, 500m, default thresholds ll=0.30 ml=0.40)
+
+| Run | seed file size | face_det_rate | TP | FP | FN | TN | F1 | Δ overall F1 |
+|---|---|---|---|---|---|---|---|---|
+| Baseline (`2c-tune-recognition-pr.json`) | 256×256 PIL.BICUBIC of jack139 dlib | 0.0 | 0 | 0 | 8 | 2 | None | — |
+| PM-B (10g model, same fixture) | 256×256 PIL.BICUBIC | 0.0 | 0 | 0 | 8 | 2 | None | +0.046 (western only) |
+| **PM-A** (drop bicubic, native ~140×147) | native jack139 dlib | **0.0** ❌ | 0 | 0 | 8 | 2 | None | 0 |
+| **PM-A.2** (native + 320×320 gray-pad) | 320×320 padded | **1.0** ✅ | 1 | 1 | 7 | 2 | 0.2 | **+0.029** |
+
+### Root cause (confirmed)
+
+The original failure was **NOT the double interpolation** as PM-B's READ_FIRST hypothesized. It was the **dlib-cropping of jack139's `test2/`**: dlib aggressively trims to face-only (face occupies ~95% of frame, no hair/neck/shoulder/background). SCRFD-500m and SCRFD-10g both expect *face-with-context* (LFW-funneled style: face ~30-50% of frame). Without context, SCRFD's classification head outputs all-zero probabilities → 0 detections → eastern bucket is a black hole.
+
+**Evidence:**
+- PM-A wrote 14 native jack139 jpgs (~131-159×125-154 RGB) directly. Server letterbox to 640×640, no PIL interp, no 256×256 hop. face_det_rate stayed at 0.0.
+- PM-A.2 took the same 14 native jpgs, centered them on a 320×320 (128,128,128) gray canvas (face occupies ~45% of frame). face_det_rate jumped to 1.0 (12 detections from 12 photos).
+- Western fixtures (LFW-funneled 250×250) always had face_det_rate=1.0 — they already have the LFW-style context.
+
+### Why PM-B's bicubic-double-interp hypothesis was wrong
+
+The 256×256 bicubic upscale of a dlib-tight crop **also** had no context. Both versions failed for the same root reason. The 256×256 vs native size delta was a red herring; what matters is **face/context ratio in the source frame**.
+
+### Procedure (PM-A.2, current production fixture)
+
+Script: `/tmp/rebuild-eastern-padded.py` (kept under /tmp; not committed — rerun-as-needed via the manifest's `params.eastern_pad_to`/`pad_fill`/`upstream_path`).
+
+1. For each enrolled eastern slug `{aidai, baijingting, baobeier, caihancen}`:
+   - GET `https://api.github.com/repos/jack139/face-dataset/contents/test2/<slug>`.
+   - Sort filenames lexicographically; take first 3 (`seed_01`, `query_01`, `query_02`).
+   - Download raw jpg bytes from `https://raw.githubusercontent.com/jack139/face-dataset/master/test2/<slug>/<name>`.
+2. For distractor `caiyilin`: same GET, take first 2 (`query_01`, `query_02`).
+3. Open each with PIL, paste centered onto 320×320 gray (128,128,128), JPEG q=92.
+4. Atomic write to `tests/fixtures/face/baseline/eastern_<slug>/{seed_01,query_01,query_02}.jpg` (+ `_distractor_eastern_caiyilin/{query_01,query_02}.jpg`).
+5. Recompute sha256 + bytes; patch each affected `MANIFEST.json` `files[]` entry.
+6. Set `params.upscale_to=null`, `params.upscale_resampler=null`, `params.eastern_pad_to=[320,320]`, `params.eastern_pad_fill=[128,128,128]`, `params.eastern_padded_at="2026-04-29 PM-A.2"`.
+7. Update `sources.eastern.note` with the rebuild rationale.
+
+### Detections (PM-A.2 raw counts)
+
+- Seed (12 photos): 12 detections — all 12 enrolled (8 W + 4 E) seeds detected on first attempt. (Up from 8 in PM-A: the 4 eastern seeds now detect.)
+- Query (30 photos = 24 enrolled queries + 6 distractors): see SUMMARY in `2c-tune-recognition-pr-fix-A2-2026-04-29.json`.
+- Eastern queries (8 enrolled): TP=1, FN=7 — SCRFD now *detects* the face but ArcFace embedding distance from seed exceeds match_lower=0.40 in 7 of 8 cases. Most slip into `learning` bucket (cos_sim in [0.30, 0.40)).
+- Eastern distractors (2 caiyilin queries against seeded persons): TP=0 FP=1 — one false-positive eastern match (a caiyilin query tagged as one of {aidai,baijingting,baobeier,caihancen}).
+
+### Threshold sweep (eastern fix path forward)
+
+Default `ml=0.40` is too strict for jack139 + LFW seed embedding distance. At `ml=0.30`:
+- Overall: P=0.700 R=0.583 F1=**0.636** (up from 0.529 at ml=0.40).
+- TP=14 FP=6 FN=10 TN=5 (eastern contributes ~5 of those 14 TPs).
+- Cost: more eastern false-positives (FP grew 1→6 across the sweep).
+
+Decision pending: keep server's `Thresholds::DEFAULT.match_lower=0.40` (current) vs lower to 0.30/0.35 (better R, more FP) vs introduce per-bucket thresholds.
+
+### Truth-baseline supersession
+
+- `docs/baselines/2c-tune-recognition-pr.json` (the legacy "truth" — eastern.F1=None) is now **historical-reference only**. The fixture it referenced no longer exists on disk; HEAD's fixture is the PM-A.2 padded version.
+- New de-facto truth: `docs/baselines/2c-tune-recognition-pr-fix-A2-2026-04-29.json` (overall F1=0.529, eastern.F1=0.200, eastern face_det_rate=1.0, western F1=0.667 unchanged).
+- Future regressions are measured against PM-A.2.
+
+### What did not change
+
+- Server: SCRFD-500m (`5e4447f5...` 2.4 MiB), `Thresholds::DEFAULT { low_lower:0.30, match_lower:0.40, augment_upper:0.95 }`, no Rust changes.
+- Western fixture: LFW-funneled 250×250, untouched.
+- Western metrics: F1=0.667, face_det_rate=1.0 — both unchanged across PM-B / PM-A / PM-A.2.
+- Distractor counts (3 total: caiyilin eastern, marcelo_rios western, thomas_rupprath western).
+
+### Followups (not done in this run)
+
+- Decide on threshold tuning: per-bucket `match_lower=0.30` for eastern only? Or train an Asian-fine-tuned ArcFace head? Current eastern recall (0.125 at default) is the next bottleneck.
+- Consider richer eastern source: jack139's `test4/` (112×112) or RMFD/glintasia — anything pre-funneled rather than dlib-tight.
+- Audit why one caiyilin distractor query crossed match_lower=0.40 against an enrolled eastern person (single eastern FP at default threshold).
+- The 3 fewer photo_unmatched between PM-A and PM-A.2 (87→83 seed-drain) and 9 more photo_matched (250 vs 246) confirm SCRFD now sees eastern seeds.
