@@ -1,0 +1,48 @@
+{
+  "_schema": "gallery-quality-audit",
+  "_version": 1,
+  "as_of": "2026-04-29T20:30:00+08:00",
+  "head_commit": "e042e99",
+  "description": "Snapshot of identity_embeddings + persons gallery state at HEAD. Pure read of bundled-pg :55444 / f1photo_prod. No side effects.",
+  "server": {
+    "app_port": 18799,
+    "pg_port": 55444,
+    "thresholds_default": {"low_lower": 0.30, "match_lower": 0.40, "augment_upper": 0.95}
+  },
+  "counts": {
+    "persons": 127,
+    "identity_embeddings": 248,
+    "identity_embeddings_for_persons": 248,
+    "identity_embeddings_for_tools": 0,
+    "identity_embeddings_for_devices": 0
+  },
+  "per_person_distribution": {
+    "0_embeds": 4,
+    "1_embed": 6,
+    "2_embeds": 121,
+    "3+_embeds": 0,
+    "total_persons": 131,
+    "_note": "persons row count = 127 in main table; 4 cold-start persons exist with zero embeddings (likely never had a seed photo successfully run through worker). 131 = 127 with-embed-count rows + 4 zero-embed persons (the with-rows include 6+121=127 \u2192 matches persons total)."
+  },
+  "per_source": {
+    "initial": {
+      "embeddings": 129,
+      "distinct_persons": 127
+    },
+    "incremental": {
+      "embeddings": 119,
+      "distinct_persons": 119
+    }
+  },
+  "derived": {
+    "persons_with_only_initial_no_incremental": 8,
+    "persons_with_zero_embeddings": 4,
+    "persons_complete_initial_plus_incremental": 119,
+    "_note": "127 - 119 = 8 persons enrolled but never re-matched any query photo to produce an incremental embed; plus 4 with literally zero seed gallery rows. Total 'incomplete' = 12. Healthy enrolled = 119/127 = 93.7%."
+  },
+  "recommendations": [
+    "4 zero-embed persons are likely id-photo-2a Path A rows where the seed upload failed inference. Worth a forensic SQL pass on photos.recognition_status for those persons' seed photos before any retrain gate calculation.",
+    "8 'initial-only' persons are not necessarily broken \u2014 they just haven't been queried against. Expected if those personas never appeared in a wo_raw query photo since enrollment.",
+    "No tool/device identity_embeddings yet (#2a-tool merged but no real tool seed photos uploaded). King has not yet provided client operational tool photos so this is on-plan."
+  ]
+}

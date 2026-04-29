@@ -50,3 +50,9 @@ western.tp + eastern.tp ≡ overall.tp ✓、overall ≡ sweep@default ✓、算
 - 实际人脸像素 ≈ 256/640 × ~140×147 ÷ 256 × 640 ≈ **140–150 px in 640² input**、但是双重插值后高频信息丢得差不多，看似以 ~70-90 px 质量。
 - SCRFD-500m `SCORE_THRESHOLD = 0.5` (sigmoid)，SCRFD 对低质人脸输出低 score，可能整个候选集都低于 0.5，被阈值滤掉 → face_count=0 → face_detection_rate=0。
 - western LFW funneled native **250×250**，质量高一别，face_detection_rate=1.0。
+
+## 2026-04-29 PM 补充
+
+-  — 当日  +  口径快照（只读，无副作用）。127 persons / 248 embeds；4 cold-start、6 only-initial、119 complete。
+-  — eastern face_detection_rate=0.0 根因定调。结论：**fixture 双重插值 + SCRFD-500m 容量不足**，不是 recall 阈值问题。King 需从 A/B/C/D 四个修复选项中选择（详见该 MD）。
+- 今日未重跑 face PR baseline（）。原因：自  (e8c3358) 后 server inference 路径零漂移，今日 HEAD =  + 3 个不影响 face PR 的 commit (//)。 仍是当前真值。
