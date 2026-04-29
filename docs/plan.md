@@ -158,3 +158,26 @@
 - `app_versions` 表提供 APK 更新元数据。
 - 后端与前端同进程发布，版本号嵌入二进制。
 - 一键脚本支持「覆盖升级」与「首次安装」两种模式；升级会跑 sqlx-migrate。
+
+
+---
+
+## 2026-04-29 PM-A.2 — Eastern fixture rebuild (committed `2d3fe16`)
+
+**Outcome:** Eastern bucket de-blackholed.
+
+| metric | baseline | PM-B (10g) | PM-A (no upscale) | **PM-A.2 (pad 320)** |
+|---|---|---|---|---|
+| eastern face_det_rate | 0.0 | 0.0 | 0.0 | **1.0** ✅ |
+| eastern F1 | None | None | None | **0.200** |
+| overall F1 | 0.500 | 0.546 | 0.500 | **0.529** |
+| western F1 | 0.667 | 0.720 | 0.667 | **0.667** (no regress) |
+
+**Root cause confirmed (overrides PM-B's hypothesis):** jack139/face-dataset is dlib-tight (face occupies ~95% of frame); SCRFD-500m/10g require LFW-funneled-style face-with-context (~30-50% face fill). Neither model deficiency (PM-B: 10g) nor double-interp (PM-A: drop bicubic) was the cause. Padding native dlib crops centered on a 320×320 (128,128,128) gray canvas restores SCRFD detection.
+
+**Followups (not in this commit):**
+- Eastern recall is 0.125 at default match_lower=0.40 — ArcFace embedding distance jack139↔jack139 is wider than LFW↔LFW. Threshold sweep shows ml=0.30 → overall F1 0.636 (+0.107) at the cost of more FPs. Decision pending: per-bucket thresholds vs global lowering vs Asian-fine-tuned ArcFace.
+- 1 caiyilin distractor query crossed match_lower against an enrolled eastern person at default — audit pending.
+- Truth-baseline `2c-tune-recognition-pr.json` superseded by `2c-tune-recognition-pr-fix-A2-2026-04-29.json`.
+
+**Authorization:** King's `全推` (2026-04-29 22:06) covered fixture rebuild + DB cleanup + re-eval + commit without further confirmation. Done.
