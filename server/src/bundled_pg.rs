@@ -99,7 +99,7 @@ impl BundledPg {
             .expect("parse loopback addr");
         if std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok() {
             if try_kill_previous_bundled_postgres(&pidfile, &data_dir, port, &postgres)? {
-                let deadline = Instant::now() + Duration::from_secs(3);
+                let deadline = Instant::now() + Duration::from_secs(15);
                 while Instant::now() < deadline {
                     if std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(200))
                         .is_err()
@@ -263,8 +263,23 @@ fn try_kill_previous_bundled_postgres(
     );
 
     #[cfg(unix)]
-    unsafe {
-        libc_kill(pid as i32, 15 /* SIGTERM */);
+    {
+        unsafe {
+            libc_kill(pid as i32, 15 /* SIGTERM */);
+        }
+
+        // Best-effort: if SIGTERM doesn"t stop it quickly, escalate to SIGKILL.
+        for _ in 0..50 {
+            if !PathBuf::from(format!("/proc/{pid}")).exists() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100))
+        }
+        if PathBuf::from(format!("/proc/{pid}")).exists() {
+            unsafe {
+                libc_kill(pid as i32, 9 /* SIGKILL */);
+            }
+        }
     }
     #[cfg(not(unix))]
     {
