@@ -88,17 +88,31 @@ impl BundledPg {
         write_postgresql_conf(&data_dir, port)?;
         write_pg_hba_conf(&data_dir)?;
 
-        // Safety guard: if something is already listening on the target port,
-        // do NOT proceed. Otherwise we can end up in a "phantom boot" state
-        // where the child postgres fails to bind, but the readiness check
-        // succeeds by connecting to an old instance.
+        // Safety guard: handle the case where the target port is already in use.
         //
-        // This must happen before spawning the child.
+        // Default: fail-fast.
+        // If we can prove the listener is our own previous bundled postgres
+        // (via pidfile + /proc cmdline checks), SIGTERM it and retry once.
+        let pidfile = data_dir.join("f1photo_bundled_pg.pid");
         let addr: std::net::SocketAddr = format!("127.0.0.1:{port}")
             .parse()
             .expect("parse loopback addr");
         if std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok() {
-            bail!("bundled postgres port {port} is already in use (refusing to start). Stop the existing postgres or choose a different F1P_BUNDLED_PG_PORT.");
+            if try_kill_previous_bundled_postgres(&pidfile, &data_dir, port, &postgres)? {
+                let deadline = Instant::now() + Duration::from_secs(3);
+                while Instant::now() < deadline {
+                    if std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(200))
+                        .is_err()
+                    {
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+            }
+
+            if std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok() {
+                bail!("bundled postgres port {port} is already in use (refusing to start). Stop the existing postgres or choose a different F1P_BUNDLED_PG_PORT.");
+            }
         }
 
         tracing::info!(port, ?data_dir, "starting bundled postgres");
@@ -113,6 +127,12 @@ impl BundledPg {
             .stderr(Stdio::null())
             .spawn()
             .context("spawn postgres")?;
+
+        // Record child pid so we can safely terminate it on future boots (if needed).
+        let _ = std::fs::write(
+            data_dir.join("f1photo_bundled_pg.pid"),
+            child.id().to_string(),
+        );
 
         wait_for_listen(port, Duration::from_secs(20))?;
 
@@ -187,6 +207,63 @@ fn which(bin_dir: &Path, name: &str) -> Result<PathBuf> {
         );
     }
     Ok(exe)
+}
+
+fn try_kill_previous_bundled_postgres(
+    pidfile: &Path,
+    data_dir: &Path,
+    port: u16,
+    postgres_path: &Path,
+) -> Result<bool> {
+    let pid_str = match std::fs::read_to_string(pidfile) {
+        Ok(s) => s,
+        Err(_) => return Ok(false),
+    };
+    let pid: u32 = pid_str.trim().parse().unwrap_or(0);
+    if pid == 0 {
+        return Ok(false);
+    }
+
+    // Validate cmdline matches our expected bundled postgres invocation.
+    let cmdline_path = PathBuf::from(format!("/proc/{pid}/cmdline"));
+    if !cmdline_path.exists() {
+        let _ = std::fs::remove_file(pidfile);
+        return Ok(false);
+    }
+    let cmdline = std::fs::read(&cmdline_path).context("read existing postgres cmdline")?;
+    let cmd = String::from_utf8_lossy(&cmdline).replace("\0", " ");
+
+    let expected = format!(
+        "{} -D {} -p {} -h 127.0.0.1",
+        postgres_path.display(),
+        data_dir.display(),
+        port
+    );
+    if !cmd.contains(&expected) {
+        return Ok(false);
+    }
+
+    tracing::warn!(
+        pid,
+        port,
+        ?data_dir,
+        "bundled postgres port is busy; terminating previous bundled postgres"
+    );
+
+    #[cfg(unix)]
+    unsafe {
+        libc_kill(pid as i32, 15 /* SIGTERM */);
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+
+    Ok(true)
 }
 
 fn write_postgresql_conf(data_dir: &Path, port: u16) -> Result<()> {
