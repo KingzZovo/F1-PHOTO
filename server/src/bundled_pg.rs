@@ -225,6 +225,18 @@ fn try_kill_previous_bundled_postgres(
     }
 
     // Validate cmdline matches our expected bundled postgres invocation.
+    #[cfg(not(unix))]
+    {
+        // No reliable cross-platform way to verify ownership of the listener here.
+        // Keep fail-fast behavior instead of risking killing the wrong process.
+        let _ = pidfile;
+        let _ = data_dir;
+        let _ = port;
+        let _ = postgres_path;
+        return Ok(false);
+    }
+
+    #[cfg(unix)]
     let cmdline_path = PathBuf::from(format!("/proc/{pid}/cmdline"));
     if !cmdline_path.exists() {
         let _ = std::fs::remove_file(pidfile);
