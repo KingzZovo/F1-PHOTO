@@ -214,6 +214,65 @@ sudo -u f1photo /opt/f1photo/f1photo reset-password --username admin
 
 ---
 
+
+---
+
+## 8. Bundled Postgres orphan recovery (port 5544/55444 busy)
+
+### Problem
+
+If the f1photo server crashes (SIGKILL / power loss) after spawning the bundled
+Postgres child, the Postgres process can remain running (or be mid-shutdown)
+while still holding the TCP port. A subsequent boot can otherwise fall into a
+"phantom boot" failure mode (connecting to the old instance) or fail to start.
+
+### Behavior (current)
+
+When `F1P_USE_BUNDLED_PG=1` and the target port is already in use, the server:
+
+1. checks for a pidfile in the PG data dir: `<data_dir>/f1photo_bundled_pg.pid`
+2. reads the pid and validates the process cmdline via `/proc/<pid>/cmdline` to
+   ensure it matches the expected bundled postgres invocation (same `-D`, `-p`, `-h`)
+3. if and only if validation passes: attempts to terminate that previous bundled
+   instance, then waits for the port to be released
+4. if the port is still busy after cleanup attempts, the boot fails fast with a
+   clear error.
+
+This is implemented in `server/src/bundled_pg.rs` (function
+`try_kill_previous_bundled_postgres`).
+
+### Verification (manual E2E)
+
+On a Linux host:
+
+```bash
+cd /root/F1-photo/server
+cargo build --release --locked
+bin=/root/F1-photo/server/target/release/f1photo
+
+# 1) start (bind 18888)
+sudo -u f1u env   F1P_USE_BUNDLED_PG=1 F1P_BUNDLED_PG_PORT=55444   F1P_BUNDLED_PG_DIR=/root/F1-photo/bundled-pg/bin   F1P_BUNDLED_PG_DATA=/tmp/f1p-e2e-pgdata   F1P_BUNDLED_PG_PASSWORD=smokepwd F1P_JWT_SECRET=smoke-jwt-secret-aaaaaaaaaaaaaaaa   F1P_BIND=127.0.0.1:18888 F1P_DATA_DIR=/tmp/f1p-e2e-uploads   F1P_MODELS_DIR=/root/F1-photo/models ORT_DYLIB_PATH=/home/f1u/work/runtime/libonnxruntime.so   RUST_LOG=info,sqlx=warn   $bin serve
+
+# 2) in another shell: simulate crash
+kill -9 <server_pid>
+
+# 3) restart (bind 18889) should recover and serve /healthz
+sudo -u f1u env ... F1P_BIND=127.0.0.1:18889 $bin serve
+curl -fsS http://127.0.0.1:18889/healthz
+```
+
+Expected: second boot logs a line similar to:
+
+- `bundled postgres port is busy; terminating previous bundled postgres pid=...`
+
+and `/healthz` succeeds.
+
+### Notes
+
+- The `/proc` validation is Unix-only. On non-Unix platforms we keep fail-fast
+  behavior instead of attempting to kill a process we cannot safely attribute.
+
+
 ## 7. ONNX model upgrade
 
 Models live under `/opt/f1photo/models/`. The registry expects:
