@@ -88,6 +88,19 @@ impl BundledPg {
         write_postgresql_conf(&data_dir, port)?;
         write_pg_hba_conf(&data_dir)?;
 
+        // Safety guard: if something is already listening on the target port,
+        // do NOT proceed. Otherwise we can end up in a "phantom boot" state
+        // where the child postgres fails to bind, but the readiness check
+        // succeeds by connecting to an old instance.
+        //
+        // This must happen before spawning the child.
+        let addr: std::net::SocketAddr = format!("127.0.0.1:{port}")
+            .parse()
+            .expect("parse loopback addr");
+        if std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok() {
+            bail!("bundled postgres port {port} is already in use (refusing to start). Stop the existing postgres or choose a different F1P_BUNDLED_PG_PORT.");
+        }
+
         tracing::info!(port, ?data_dir, "starting bundled postgres");
         let child = Command::new(&postgres)
             .arg("-D")
