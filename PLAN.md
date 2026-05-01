@@ -48,6 +48,13 @@ King 19:44 批 ABCD 全推。2026-04-29 PM 运行结果：
 
 ## 已完成里程碑（v1.4 → v1.5.0，按时间倒序）
 
+
+### 2026-05-01 AM
+- bundled PG phantom-boot hardening + orphan recovery（见 PR 分支 `fix/bundled-pg-pidfile-kill`）
+  - fail-fast when port is already in use
+  - if and only if verified via pidfile + /proc cmdline: terminate previous bundled PG then retry
+  - E2E verified: crash server (SIGKILL) leaving orphan PG -> restart recovers and /healthz ok
+  - runbook: `docs/operations.md` section "Bundled Postgres orphan recovery"
 ### 2026-04-29 PM 深夜
 - `84366fc` docs(baselines): 修复 backtick-stripped READ_FIRST PM 补充
 - `ad8f0ac` docs(baselines): 2026-04-29 PM gallery audit + SCRFD eastern fixture 诊断
