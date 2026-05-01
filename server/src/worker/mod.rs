@@ -862,10 +862,13 @@ async fn run_tool_bootstrap_pipeline(
     //
     // Filtering these two proposal classes materially reduces noise on that
     // cohort while remaining low-risk for real worksite tools.
-    let dets: Vec<yolov8::ObjectDet> = dets
-        .into_iter()
-        .filter(|d| d.class_id != 0 && d.class_id != 27)
-        .collect();
+    let dets: Vec<yolov8::ObjectDet> = if state.config.tool_yolo_class_filter {
+        dets.into_iter()
+            .filter(|d| !state.config.tool_yolo_class_blacklist.contains(&d.class_id))
+            .collect()
+    } else {
+        dets
+    };
 
     tracing::info!(
         job_id = job.id,
