@@ -15,6 +15,10 @@ pub struct Config {
     /// Per-session intra-op thread count for ONNX Runtime. Override with
     /// `F1P_INFERENCE_THREADS`. Defaults to 4 (CPU INT8 on the 10C/20T host).
     pub inference_intra_threads: usize,
+    /// If set to 1, filter YOLOv8 COCO class IDs from tool proposals (noise-reduction).
+    /// Configure via:  and .
+    pub tool_yolo_class_filter: bool,
+    pub tool_yolo_class_blacklist: Vec<usize>,
 }
 
 impl Config {
@@ -43,6 +47,17 @@ impl Config {
             .filter(|n| *n > 0)
             .unwrap_or(4);
 
+        let tool_yolo_class_filter =
+            env::var("F1P_TOOL_YOLO_CLASS_FILTER").ok().as_deref() == Some("1");
+        let tool_yolo_class_blacklist: Vec<usize> = env::var("F1P_TOOL_YOLO_CLASS_BLACKLIST")
+            .ok()
+            .unwrap_or_else(|| "0,27".into())
+            .split(",")
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .filter_map(|s| s.parse::<usize>().ok())
+            .collect();
+
         Ok(Self {
             bind_addr,
             database_url,
@@ -51,6 +66,8 @@ impl Config {
             max_upload_mb,
             models_dir,
             inference_intra_threads,
+            tool_yolo_class_filter,
+            tool_yolo_class_blacklist,
         })
     }
 }

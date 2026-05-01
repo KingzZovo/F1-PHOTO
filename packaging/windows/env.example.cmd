@@ -11,4 +11,11 @@ set F1P_DATA_DIR=%ProgramFiles%\F1Photo\data
 set F1P_MODELS_DIR=%ProgramFiles%\F1Photo\models
 set F1P_MAX_UPLOAD_MB=20
 set F1P_INFERENCE_THREADS=4
+
+@REM Optional: tool-pipeline YOLO proposal noise filter (COCO class blacklist)
+@REM Enable: set to 1. Default off.
+set F1P_TOOL_YOLO_CLASS_FILTER=0
+@REM Comma-separated COCO class IDs to drop before DINOv2 embedding + recall.
+@REM Default recommended: 0(person),27(tie) based on the 119-photo Asian ID cohort.
+set F1P_TOOL_YOLO_CLASS_BLACKLIST=0,27
 set ORT_DYLIB_PATH=%ProgramFiles%\F1Photo\runtime\onnxruntime.dll

@@ -69,7 +69,9 @@ use tokio::time::sleep;
 use uuid::Uuid;
 
 use crate::api::AppState;
-use crate::inference::{preprocess, recall, scrfd, yolov8, BucketThresholds, ModelKind, Thresholds};
+use crate::inference::{
+    preprocess, recall, scrfd, yolov8, BucketThresholds, ModelKind, Thresholds,
+};
 
 /// After this many failed attempts the photo is marked `failed` and the queue
 /// row is removed.
@@ -848,6 +850,25 @@ async fn run_tool_bootstrap_pipeline(
         yolov8::DEFAULT_CONF,
         yolov8::DEFAULT_IOU,
     )?;
+
+    // COCO-trained YOLOv8 class IDs are noisy for our offline worksite tool
+    // detection. We use YOLO strictly as a region proposer, and rely on DINOv2
+    // + gallery recall for re-identification.
+    //
+    // Empirically, in the 119-photo Asian ID cohort (docs/baselines/2c-asia.json),
+    // the unmatched false positives were dominated by:
+    // - class_id=0  (person) 119/119 photos
+    // - class_id=27 (tie)    95/119 photos
+    //
+    // Filtering these two proposal classes materially reduces noise on that
+    // cohort while remaining low-risk for real worksite tools.
+    let dets: Vec<yolov8::ObjectDet> = if state.config.tool_yolo_class_filter {
+        dets.into_iter()
+            .filter(|d| !state.config.tool_yolo_class_blacklist.contains(&d.class_id))
+            .collect()
+    } else {
+        dets
+    };
 
     tracing::info!(
         job_id = job.id,
