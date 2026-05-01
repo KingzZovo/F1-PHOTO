@@ -52,6 +52,8 @@ F1-photo/
 
 已进入 v1.5.0 rollout / 推理链路迭代阶段：\
 - real pipeline（SCRFD + ArcFace + YOLOv8n + DINOv2）已落地并持续用 baseline 驱动演进\
+- bundled PG 启动链路已硬化：端口占用 fail-fast + orphan instance 自动清理（pidfile + /proc 校验，必要时 SIGKILL）\
+- 运维手册：`docs/operations.md`（Bundled Postgres orphan recovery）\
 - 最新状态与决策以 `docs/v1.4.x-v1.5.0-roadmap.md` 为单一事实源
 
 ## License
